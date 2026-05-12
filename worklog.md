@@ -1,5 +1,5 @@
 ---
-Task ID: 2
+Task ID: 1
 Agent: Main Agent
 Task: Fix preview not loading - server crashes when scraping course details
 
@@ -20,3 +20,23 @@ Stage Summary:
 - Next.js API routes call scraper service via localhost:3030 instead of using SDK directly
 - Course details (description, courseType, terrain, etc.) now properly fetched and cached
 - Services need to be started: `bun run dev` for Next.js + `bun index.ts` for scraper
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix preview not loading (continued) + deployment guide
+
+Work Log:
+- Verified lint passes cleanly with `bun run lint`
+- Verified Prisma client is generated and DB schema is in sync
+- Both services (Next.js:3000, Scraper:3030) confirmed working
+- Tested all API endpoints: /api/courses returns 1080 courses, /api/courses/[slug] returns detail
+- Tested HTML rendering: 33KB page returned with HTTP 200
+- Course detail data confirmed working with Finnish labels and rich detail
+- Verified no TypeScript or runtime errors
+
+Stage Summary:
+- App is fully functional: 1080 Finnish disc golf courses with ratings, classifications, and details
+- Two services required: Next.js (port 3000) + Scraper microservice (port 3030)
+- Caddy gateway on port 81 proxies to Next.js by default, with XTransformPort for scraper
+- All data sourced from frisbeegolfradat.fi via z-ai-web-dev-sdk page_reader
