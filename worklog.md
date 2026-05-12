@@ -1,36 +1,36 @@
-# Disc Golf Companion App - Worklog
-
 ---
-Task ID: 4
-Agent: Main Orchestrator
-Task: Switch data source from DiscGolfMetrix to Frisbeegolfradat.fi
+Task ID: 1
+Agent: Main Agent
+Task: Improve frisbeegolfradat.fi course detail scraper and update frontend
 
 Work Log:
-- Researched frisbeegolfradat.fi website structure (WordPress, no API)
-- Used z-ai page_reader to scrape course listing page (1080 courses in table)
-- Parsed course data: name, city, holes, rating, classification, isTop, isNew, mapUrl
-- Parsed course detail page: coordinates, address, founded, baskets, terrain, signage, etc.
-- Created Prisma schema with Course model including all detail fields
-- Built scraper module: src/lib/scraper/frisbeegolfradat.ts
-  - scrapeCourseList(): scrapes listing page table
-  - scrapeCourseDetail(): scrapes individual course page
-  - syncCourseList(): syncs listing data to DB
-  - fetchAndCacheCourseDetail(): fetches and caches detail on-demand
-- Created API routes:
-  - GET /api/courses - paginated list with search/filter
-  - GET /api/courses/[slug] - detail with on-demand scraping
-  - GET /api/sync - syncs course list from frisbeegolfradat.fi
-- Updated types.ts: new Course type with frisbeegolfradat fields + classification helpers
-- Updated store: simplified for new data model (no more CourseGroup)
-- Updated hooks: useCourses with pagination, useCourseDetail, useSync
-- Rebuilt all frontend components for new data model
-- Synced 1080 courses to database
-- Tested course detail scraping: coordinates, address, founded, baskets, terrain all work
+- Analyzed HTML structure of frisbeegolfradat.fi course detail pages
+- Found the structured HTML with `<li class="course_info">` elements containing key-value pairs
+- Identified issues with old scraper: text-based regex after stripping HTML was fragile and captured garbage data (navigation, dropdowns, etc.)
+- Updated Prisma schema with 4 new fields: `description`, `descriptionFull`, `scorecardUrl`, `ratingCount`
+- Ran `db:push` to sync schema
+- Rewrote scraper with HTML-aware parsing:
+  - `parseCourseInfoHtml()` function extracts key-value pairs from `<li>` elements using proper HTML regex
+  - Short description from `<span class="caption">` 
+  - Full description from `<span class="description">`
+  - Rating count from star image `alt` attributes
+  - Scorecard URL from sidebar link
+  - Better address parsing that handles multi-line addresses with zip codes
+- Updated TypeScript types in `src/lib/types.ts` with new fields
+- Updated CourseDetailView with:
+  - Description section with "Lue lisää" expandable button
+  - Finnish labels (Radan kuvaus, Sijainti, Radan tiedot, etc.)
+  - Rating count display next to rating
+  - Scorecard link
+  - Course map section with Finnish label "Ratakartta"
+- Updated CourseCard with Finnish "väylää" instead of "holes"
+- Updated AppShell footer to "Tiedot: Frisbeegolfradat.fi"
+- Cleared all old detail data from database and tested fresh scraping
+- Verified API returns clean data with all new fields
+- Lint passes clean
 
 Stage Summary:
-- Data source: frisbeegolfradat.fi (scraped via z-ai page_reader)
-- 1080 Finnish disc golf courses with ratings, classifications, locations
-- On-demand detail scraping with 24h cache
-- Classification system: AAA1-C1 with color coding
-- Top course (Huippurata) and new course (UUSI) badges
-- All lint checks pass, app running correctly
+- Scraper now produces clean, well-structured data from frisbeegolfradat.fi detail pages
+- New fields: description (short), descriptionFull (extended), scorecardUrl, ratingCount
+- Frontend updated with Finnish labels and better data presentation
+- All 1080 courses' detail cache cleared for fresh re-scraping on next visit

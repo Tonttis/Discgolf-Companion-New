@@ -50,7 +50,7 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
             </div>
           )}
           <Badge variant="outline" className="text-[11px] px-1.5 py-0">
-            {course.holes} holes
+            {course.holes} väylää
           </Badge>
           {course.classification && (
             <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${getClassificationBg(course.classification)} ${getClassificationColor(course.classification)}`}>

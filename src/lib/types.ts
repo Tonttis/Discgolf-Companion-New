@@ -31,6 +31,10 @@ export interface Course {
   isFree: string | null;
   moreInfo: string | null;
   winterPlay: string | null;
+  description: string | null;
+  descriptionFull: string | null;
+  scorecardUrl: string | null;
+  ratingCount: number | null;
   detailFetchedAt: string | null;
 
   createdAt: string;

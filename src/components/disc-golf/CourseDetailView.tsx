@@ -1,9 +1,11 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import {
   MapPin,
   Navigation,
@@ -20,11 +22,14 @@ import {
   Signpost,
   Wrench,
   Users,
-  Ruler,
   CircleDollarSign,
-  Link2,
   Snowflake,
   Info,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Map,
+  MessageSquare,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCourseDetail } from '@/hooks/use-disc-golf';
@@ -32,6 +37,7 @@ import { getClassificationLabel, getClassificationColor, getClassificationBg } f
 
 export function CourseDetailView() {
   const selectedCourse = useAppStore((s) => s.selectedCourse);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   const { data: course, isLoading } = useCourseDetail(
     selectedCourse?.slug ?? null
@@ -47,7 +53,6 @@ export function CourseDetailView() {
     );
   }
 
-  // Use the fresh course data from API if available, fall back to selectedCourse
   const displayCourse = course ?? selectedCourse!;
 
   if (isLoading) {
@@ -65,11 +70,16 @@ export function CourseDetailView() {
 
   const hasDetail = !!displayCourse.detailFetchedAt;
 
+  // Combine short and full description
+  const fullDesc = displayCourse.descriptionFull || displayCourse.description;
+  const shortDesc = displayCourse.description;
+  const hasLongDescription = !!displayCourse.descriptionFull && displayCourse.descriptionFull !== displayCourse.description;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Course Header */}
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-emerald-600 to-green-700 p-6 text-white">
+        <div className="bg-gradient-to-r from-emerald-600 to-green-700 p-5 sm:p-6 text-white">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1.5 min-w-0">
               <h2 className="text-xl sm:text-2xl font-bold leading-tight">
@@ -99,16 +109,19 @@ export function CourseDetailView() {
           </div>
         </div>
         <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
             {displayCourse.rating !== null && (
               <div className="flex items-center gap-1.5">
                 <Star className="size-4 text-amber-500 fill-amber-500" />
                 <span className="font-semibold">{displayCourse.rating.toFixed(1)}</span>
+                {displayCourse.ratingCount && (
+                  <span className="text-muted-foreground text-xs">({displayCourse.ratingCount})</span>
+                )}
               </div>
             )}
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Target className="size-4" />
-              <span>{displayCourse.holes} holes</span>
+              <span>{displayCourse.holes} väylää</span>
             </div>
             {displayCourse.classification && (
               <span className={`font-semibold px-2 py-0.5 rounded text-xs ${getClassificationBg(displayCourse.classification)} ${getClassificationColor(displayCourse.classification)}`}>
@@ -119,6 +132,43 @@ export function CourseDetailView() {
         </CardContent>
       </Card>
 
+      {/* Description */}
+      {shortDesc && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="size-4 text-emerald-600 dark:text-emerald-400" />
+              Radan kuvaus
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed text-foreground/90">
+              {showFullDescription && fullDesc ? fullDesc : shortDesc}
+            </p>
+            {hasLongDescription && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-8 text-emerald-600 dark:text-emerald-400 -ml-2"
+                onClick={() => setShowFullDescription(!showFullDescription)}
+              >
+                {showFullDescription ? (
+                  <>
+                    <ChevronUp className="size-4 mr-1" />
+                    Näytä vähemmän
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="size-4 mr-1" />
+                    Lue lisää
+                  </>
+                )}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
@@ -126,7 +176,7 @@ export function CourseDetailView() {
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
               {displayCourse.holes}
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5">Holes</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Väyliä</div>
           </CardContent>
         </Card>
         <Card>
@@ -134,15 +184,15 @@ export function CourseDetailView() {
             <div className="text-2xl font-bold text-amber-500">
               {displayCourse.rating?.toFixed(1) ?? '—'}
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5">Rating</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Arvosana</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-sm font-bold text-foreground">
-              {displayCourse.isFree === 'ilmainen' ? 'Free' : displayCourse.isFree ?? '—'}
+              {displayCourse.isFree === 'ilmainen' ? 'Ilmainen' : displayCourse.isFree ?? '—'}
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5">Cost</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Hinta</div>
           </CardContent>
         </Card>
         <Card>
@@ -150,7 +200,7 @@ export function CourseDetailView() {
             <div className="text-sm font-bold text-foreground">
               {displayCourse.winterPlay ?? '—'}
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5">Winter</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Talvi</div>
           </CardContent>
         </Card>
       </div>
@@ -160,13 +210,13 @@ export function CourseDetailView() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <MapPin className="size-4 text-emerald-600 dark:text-emerald-400" />
-            Location
+            Sijainti
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {displayCourse.address && (
             <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Address</p>
+              <p className="text-xs text-muted-foreground">Osoite</p>
               <p className="text-sm font-medium">
                 {displayCourse.address}
                 {displayCourse.zipCode && `, ${displayCourse.zipCode}`}
@@ -181,8 +231,8 @@ export function CourseDetailView() {
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground">
                     {displayCourse.latitude && displayCourse.longitude
-                      ? `Coordinates`
-                      : 'Find on map'}
+                      ? 'Koordinaatit'
+                      : 'Etsi kartalta'}
                   </p>
                   {displayCourse.latitude && displayCourse.longitude && (
                     <p className="text-sm font-mono">
@@ -197,7 +247,7 @@ export function CourseDetailView() {
                   className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 text-sm font-medium hover:bg-emerald-200 dark:hover:bg-emerald-900/70 transition-colors"
                 >
                   <Navigation className="size-3.5" />
-                  Open in Maps
+                  Avaa kartalla
                   <ExternalLink className="size-3" />
                 </a>
               </div>
@@ -212,23 +262,22 @@ export function CourseDetailView() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Info className="size-4 text-emerald-600 dark:text-emerald-400" />
-              Course Details
+              Radan tiedot
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <DetailRow icon={<Calendar className="size-4" />} label="Founded" value={displayCourse.founded} />
-              <DetailRow icon={<ShoppingBasket className="size-4" />} label="Baskets" value={displayCourse.basketType} />
-              <DetailRow icon={<TreePine className="size-4" />} label="Tee Pads" value={displayCourse.teeType} />
-              <DetailRow icon={<Mountain className="size-4" />} label="Terrain" value={displayCourse.terrain} />
-              <DetailRow icon={<Signpost className="size-4" />} label="Signage" value={displayCourse.signage} />
-              <DetailRow icon={<Flag className="size-4" />} label="Course Type" value={displayCourse.courseType} />
-              <DetailRow icon={<Wrench className="size-4" />} label="Maintenance" value={displayCourse.maintenance} />
-              <DetailRow icon={<Users className="size-4" />} label="Course Master" value={displayCourse.courseMaster} />
-              <DetailRow icon={<Ruler className="size-4" />} label="Designer" value={displayCourse.designer} />
-              <DetailRow icon={<CircleDollarSign className="size-4" />} label="Cost" value={displayCourse.isFree} />
-              <DetailRow icon={<Snowflake className="size-4" />} label="Winter Play" value={displayCourse.winterPlay} />
-              <DetailRow icon={<Link2 className="size-4" />} label="More Info" value={displayCourse.moreInfo} isLink />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              <DetailRow icon={<Calendar className="size-4" />} label="Perustettu" value={displayCourse.founded} />
+              <DetailRow icon={<ShoppingBasket className="size-4" />} label="Korit" value={displayCourse.basketType} />
+              <DetailRow icon={<TreePine className="size-4" />} label="Heittopaikat" value={displayCourse.teeType} />
+              <DetailRow icon={<Mountain className="size-4" />} label="Pinnanmuodot" value={displayCourse.terrain} />
+              <DetailRow icon={<Signpost className="size-4" />} label="Opasteet" value={displayCourse.signage} />
+              <DetailRow icon={<Flag className="size-4" />} label="Ratatyyppi" value={displayCourse.courseType} />
+              <DetailRow icon={<Wrench className="size-4" />} label="Ylläpito" value={displayCourse.maintenance} />
+              <DetailRow icon={<Users className="size-4" />} label="Ratamestari" value={displayCourse.courseMaster} />
+              <DetailRow icon={<Users className="size-4" />} label="Suunnittelija" value={displayCourse.designer} />
+              <DetailRow icon={<CircleDollarSign className="size-4" />} label="Hinta" value={displayCourse.isFree === 'ilmainen' ? 'Ilmainen' : displayCourse.isFree} />
+              <DetailRow icon={<Snowflake className="size-4" />} label="Talvipelattavuus" value={displayCourse.winterPlay} />
             </div>
           </CardContent>
         </Card>
@@ -238,7 +287,10 @@ export function CourseDetailView() {
       {displayCourse.mapUrl && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Course Map</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Map className="size-4 text-emerald-600 dark:text-emerald-400" />
+              Ratakartta
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <a
@@ -249,8 +301,8 @@ export function CourseDetailView() {
             >
               <img
                 src={displayCourse.mapUrl}
-                alt={`${displayCourse.name} course map`}
-                className="w-full h-auto max-h-96 object-contain"
+                alt={`${displayCourse.name} ratakartta`}
+                className="w-full h-auto max-h-96 object-contain bg-gray-50 dark:bg-gray-900"
               />
             </a>
           </CardContent>
@@ -266,17 +318,17 @@ export function CourseDetailView() {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
           >
-            View on Frisbeegolfradat.fi
+            Näytä Frisbeegolfradat.fi:ssä
             <ExternalLink className="size-3.5" />
           </a>
-          {displayCourse.moreInfo && displayCourse.moreInfo.includes('http') && (
+          {displayCourse.scorecardUrl && (
             <a
-              href={displayCourse.moreInfo.match(/https?:\/\/[^\s]+/)?.[0]}
+              href={displayCourse.scorecardUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
             >
-              Course Website
+              Tuloskortti
               <ExternalLink className="size-3.5" />
             </a>
           )}
@@ -290,25 +342,19 @@ function DetailRow({
   icon,
   label,
   value,
-  isLink,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string | null | undefined;
-  isLink?: boolean;
 }) {
-  if (!value) return null;
-
-  const displayValue = isLink && value.includes('http')
-    ? value.replace(/^Radan kotisivuilta:\s*/i, '').replace(/^https?:\/\//, '').replace(/\/$/, '')
-    : value;
+  if (!value || value === '—') return null;
 
   return (
     <div className="flex items-start gap-2.5 py-1">
       <div className="text-muted-foreground mt-0.5 shrink-0">{icon}</div>
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium break-words">{displayValue}</p>
+        <p className="text-sm font-medium break-words">{value}</p>
       </div>
     </div>
   );
@@ -316,7 +362,7 @@ function DetailRow({
 
 function CourseDetailSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Card className="overflow-hidden">
         <div className="bg-muted p-6">
           <Skeleton className="h-7 w-3/4" />

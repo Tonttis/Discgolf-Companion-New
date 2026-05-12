@@ -37,6 +37,10 @@ model Course {
   isFree      String?
   moreInfo    String?
   winterPlay  String?
+  description String?
+  descriptionFull String?
+  scorecardUrl String?
+  ratingCount Int?
   detailFetchedAt DateTime?
 
   createdAt   DateTime @default(now())

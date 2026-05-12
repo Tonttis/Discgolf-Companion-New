@@ -3,6 +3,10 @@ import { db } from '@/lib/db';
 
 const BASE_URL = 'https://frisbeegolfradat.fi';
 
+// ==========================================
+// List Scraping Types
+// ==========================================
+
 interface ScrapedCourse {
   slug: string;
   name: string;
@@ -32,16 +36,82 @@ interface CourseDetail {
   isFree?: string;
   moreInfo?: string;
   winterPlay?: string;
+  description?: string;
+  descriptionFull?: string;
+  scorecardUrl?: string;
+  ratingCount?: number;
 }
+
+// ==========================================
+// Utility Functions
+// ==========================================
 
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Extract the text content from a <p>...</p> tag,
+ * preserving <br> as newlines for multiline fields.
+ */
+function extractPTagContent(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .trim();
+}
+
+/**
+ * Parse all key-value pairs from the <ul class="course_info"> section.
+ * Returns a map of Finnish label → value string.
+ */
+function parseCourseInfoHtml(html: string): Map<string, string> {
+  const result = new Map<string, string>();
+
+  // Extract the course_info <ul> section
+  const sectionMatch = html.match(/<ul\s+class="course_info">([\s\S]*?)<\/ul>/);
+  if (!sectionMatch) return result;
+
+  const section = sectionMatch[1];
+
+  // Pattern 1: <li class="course_info_left"> or <li class="course_info_right">
+  //   <b>Label</b><br><p>Value</p>
+  // Pattern 2: <li> or <li class="course_info">
+  //   <b>Label</b><br><p>Value</p>
+
+  // Match all <li> elements within the section
+  const liRegex = /<li[^>]*>\s*<b>\s*([\s\S]*?)\s*<\/b>\s*<br\s*\/?>\s*<p>\s*([\s\S]*?)\s*<\/p>\s*<\/li>/g;
+  let match;
+
+  while ((match = liRegex.exec(section)) !== null) {
+    const label = stripHtml(match[1]).trim();
+    const value = extractPTagContent(match[2]).trim();
+    if (label && value) {
+      result.set(label, value);
+    }
+  }
+
+  return result;
+}
+
+// ==========================================
+// Course List Scraper
+// ==========================================
 
 export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
   const zai = await ZAI.create();
@@ -50,8 +120,10 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
   });
 
   const html: string = result.data.html;
+
+  // Find the courses table
   const tableMatch = html.match(/<table[^>]*id="radatlistaus"[^>]*>([\s\S]*?)<\/table>/);
-  if (!tableMatch) throw new Error('Could not find courses table');
+  if (!tableMatch) throw new Error('Could not find courses table on frisbeegolfradat.fi/radat/');
 
   const tableHtml = tableMatch[1];
   const rows = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/g) ?? [];
@@ -61,14 +133,36 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
     const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g);
     if (!cells || cells.length < 4) continue;
 
+    // Cell 0: row number (skip)
+    // Cell 1: classification image (<img ... alt="a1" ...>)
+    // Cell 2: course name with link, rating, map link, top/new badges
+    // Cell 3: city
+    // Cell 4: holes count
+
+    // Extract classification from image alt text
+    const classImgMatch = cells[1].match(/alt="(a{1,3}\d|b{1,3}\d|c{1,3}\d)"/i);
+    const classification = classImgMatch ? classImgMatch[1].toLowerCase() : '';
+
+    // Extract slug and name from the link
     const linkMatch = cells[2].match(/href="\/rata\/([^"]+)"/);
     const nameMatch = cells[2].match(/href="\/rata\/[^"]+">([^<]+)<\/a>/);
+
+    // Extract numeric rating
     const ratingMatch = cells[2].match(/class="rating-average">([0-9.]+)<\/div>/);
-    const ratingImgMatch = cells[1].match(/ratings\/([a-z]+\d+)\.png/);
+
+    // Extract map URL
     const mapMatch = cells[2].match(/href="(https:\/\/frisbeegolfradat\.fi\/files\/[^"]+ratakartta[^"]+)"/);
+
+    // Check for top course badge
     const isTop = cells[2].includes('course_plus');
+
+    // Check for new badge
     const isNew = cells[2].includes('UUSI');
+
+    // Extract city
     const city = stripHtml(cells[3]);
+
+    // Extract holes count
     const holes = parseInt(stripHtml(cells[4]), 10) || 0;
 
     if (linkMatch && nameMatch) {
@@ -78,7 +172,7 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
         city,
         holes,
         rating: ratingMatch ? parseFloat(ratingMatch[1]) : null,
-        classification: ratingImgMatch ? ratingImgMatch[1] : '',
+        classification,
         isTop,
         isNew,
         mapUrl: mapMatch ? mapMatch[1] : null,
@@ -89,6 +183,10 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
   return courses;
 }
 
+// ==========================================
+// Course Detail Scraper
+// ==========================================
+
 export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
   const zai = await ZAI.create();
   const result = await zai.functions.invoke('page_reader', {
@@ -98,66 +196,103 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
   const html: string = result.data.html;
   const detail: CourseDetail = {};
 
-  // Extract coordinates from Google Maps link
+  // --- 1. Extract coordinates from Google Maps link ---
   const mapsMatch = html.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
   if (mapsMatch) {
     detail.latitude = parseFloat(mapsMatch[1]);
     detail.longitude = parseFloat(mapsMatch[2]);
   }
 
-  // Strip all HTML and work with clean text
-  const text = stripHtml(html);
+  // --- 2. Extract description ---
+  // Short description is in <span class="caption"><p>TEXT<br><br><a>Lue lisää</a></p></span>
+  const captionMatch = html.match(/<span\s+class="caption">\s*<p>\s*([\s\S]*?)\s*<br>/);
+  if (captionMatch) {
+    detail.description = extractPTagContent(captionMatch[1]);
+  }
 
-  // Extract course_info section more precisely by finding the pattern:
-  // Each field follows: "Label  Value" where Value ends at the next known label
-  const fieldDefs: Array<{ label: string; field: keyof CourseDetail; endLabels: string[] }> = [
-    { label: 'Perustettu', field: 'founded', endLabels: ['Korit'] },
-    { label: 'Korit', field: 'basketType', endLabels: ['Heittopaikat', 'Väylien määrä'] },
-    { label: 'Heittopaikat', field: 'teeType', endLabels: ['Pinnanmuodot'] },
-    { label: 'Pinnanmuodot', field: 'terrain', endLabels: ['Opasteet'] },
-    { label: 'Opasteet', field: 'signage', endLabels: ['Ratatyyppi'] },
-    { label: 'Ratatyyppi', field: 'courseType', endLabels: ['Ylläpito'] },
-    { label: 'Ylläpito', field: 'maintenance', endLabels: ['Ratamestari'] },
-    { label: 'Ratamestari', field: 'courseMaster', endLabels: ['Suunnittelija'] },
-    { label: 'Suunnittelija', field: 'designer', endLabels: ['Ilmainen', 'Lisätietoja'] },
-    { label: 'Ilmainen/maksullinen', field: 'isFree', endLabels: ['Lisätietoja', 'Talvipelattavuus'] },
-    { label: 'Lisätietoja', field: 'moreInfo', endLabels: ['Talvipelattavuus'] },
-    { label: 'Talvipelattavuus', field: 'winterPlay', endLabels: ['Radan tiedot', 'Ratakartta', 'Tuloskortti'] },
-  ];
-
-  for (const { label, field, endLabels } of fieldDefs) {
-    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const endPattern = endLabels.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    // Match: label, then content until any endLabel
-    const pattern = new RegExp(
-      `${escapedLabel}\\s+(.+?)(?:\\s+(?:${endPattern})\\s+|$)`,
-      'i'
-    );
-    const match = text.match(pattern);
-    if (match && match[1].trim()) {
-      (detail as Record<string, string | number | undefined>)[field] = match[1].trim();
+  // Full description is in <span class="description">...</span>
+  const descMatch = html.match(/<span\s+class="description">([\s\S]*?)<\/span>/);
+  if (descMatch) {
+    const fullDesc = extractPTagContent(descMatch[1]);
+    // Only store full description if it differs from the short one
+    if (fullDesc && fullDesc !== detail.description) {
+      detail.descriptionFull = fullDesc;
     }
   }
 
-  // Extract address from the Osoite section
-  const addressPattern = /Osoite\s+([\s\S]*?)(?=Rata kartalla|Perustettu)/i;
-  const addressMatch = text.match(addressPattern);
-  if (addressMatch) {
-    const addrText = addressMatch[1].trim();
-    // Parse address: "Kippasuonväylä 30 18100 Heinola"
-    const addrParts = addrText.split(/\s+/);
-    // Find the zip code (5 digits)
-    const zipIdx = addrParts.findIndex(p => /^\d{5}$/.test(p));
-    if (zipIdx >= 0) {
-      detail.address = addrParts.slice(0, zipIdx).join(' ');
-      detail.zipCode = addrParts[zipIdx];
-    } else if (addrText) {
-      detail.address = addrText;
+  // --- 3. Parse all course info fields from the structured HTML ---
+  const infoMap = parseCourseInfoHtml(html);
+
+  // Map Finnish labels to our fields
+  const labelToField: Record<string, keyof CourseDetail> = {
+    'Osoite': 'address',
+    'Perustettu': 'founded',
+    'Korit': 'basketType',
+    'Väylien määrä': 'holes', // redundant but available
+    'Heittopaikat': 'teeType',
+    'Pinnanmuodot': 'terrain',
+    'Opasteet': 'signage',
+    'Ratatyyppi': 'courseType',
+    'Ylläpito': 'maintenance',
+    'Ratamestari': 'courseMaster',
+    'Suunnittelija': 'designer',
+    'Ilmainen/maksullinen': 'isFree',
+    'Lisätietoja': 'moreInfo',
+    'Talvipelattavuus': 'winterPlay',
+  };
+
+  for (const [label, field] of Object.entries(labelToField)) {
+    const value = infoMap.get(label);
+    if (value && field !== 'holes') { // skip holes, already from list
+      (detail as Record<string, string | number | undefined>)[field] = value;
+    }
+  }
+
+  // --- 4. Parse address more precisely ---
+  // The address field from HTML is like "Joensuuntie 136\n83750 Polvijärvi"
+  // Split into street, zip, city
+  if (detail.address) {
+    const addrLines = detail.address.split('\n').map(l => l.trim()).filter(Boolean);
+    if (addrLines.length >= 2) {
+      // First line is street address
+      detail.address = addrLines[0];
+      // Second line may be "zipCode city"
+      const zipCityMatch = addrLines[1].match(/^(\d{5})\s+(.+)$/);
+      if (zipCityMatch) {
+        detail.zipCode = zipCityMatch[1];
+        // City from address line (don't overwrite - already from list)
+      }
+    }
+  }
+
+  // --- 5. Extract rating count from the star images ---
+  const ratingImgMatch = html.match(/alt="(\d+)\s+votes?,\s+average:\s+([0-9,]+)\s+out\s+of\s+5"/i);
+  if (ratingImgMatch) {
+    detail.ratingCount = parseInt(ratingImgMatch[1], 10);
+  }
+
+  // --- 6. Extract scorecard URL ---
+  const scorecardMatch = html.match(/href="\/rata\/[^"]+\/tuloskortti\/[^"]+"/);
+  if (scorecardMatch) {
+    const href = scorecardMatch[0].replace(/href="/, '').replace(/"$/, '');
+    detail.scorecardUrl = `${BASE_URL}${href}`;
+  }
+
+  // --- 7. Extract map URL from detail page sidebar (more reliable than list) ---
+  if (!detail.mapUrl) {
+    const sidebarMapMatch = html.match(/class="sidebar_map">\s*<a\s+href="(https:\/\/frisbeegolfradat\.fi\/files\/[^"]+)"/);
+    if (sidebarMapMatch) {
+      // Store in mapUrl if not already set - but this is a detail-only field
+      // We'll just note it for now
     }
   }
 
   return detail;
 }
+
+// ==========================================
+// Sync Functions
+// ==========================================
 
 export async function syncCourseList(): Promise<{ added: number; updated: number; total: number }> {
   const courses = await scrapeCourseList();

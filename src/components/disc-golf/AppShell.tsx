@@ -93,7 +93,7 @@ export function AppShell() {
       <footer className="hidden sm:block mt-auto border-t">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <p className="text-xs text-center text-muted-foreground">
-            DiscGolf Companion · Powered by DiscGolfMetrix
+            DiscGolf Companion · Tiedot: Frisbeegolfradat.fi
           </p>
         </div>
       </footer>
