@@ -46,6 +46,10 @@ model Course {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Banner/cover photo (from top-course-cover-photo div)
+  bannerImageUrl String?  // Cover photo URL (background-image of .top-course-cover-photo)
+  logoUrl       String?  // Overlay logo URL (from .overlay-logo img)
+
   // Hole-by-hole descriptions (from Väyläkuvaukset section)
   holeDetails Hole[]
 }

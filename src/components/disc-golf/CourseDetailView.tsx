@@ -88,34 +88,94 @@ export function CourseDetailView() {
     <div className="space-y-5">
       {/* Course Header */}
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-emerald-600 to-green-700 p-5 sm:p-6 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1.5 min-w-0">
-              <h2 className="text-xl sm:text-2xl font-bold leading-tight">
-                {displayCourse.name}
-              </h2>
-              {displayCourse.city && (
-                <div className="flex items-center gap-1.5 text-emerald-100 text-sm">
-                  <MapPin className="size-3.5" />
-                  <span>{displayCourse.city}</span>
+        <div className="relative">
+          {displayCourse.bannerImageUrl ? (
+            <>
+              {/* Banner image as background */}
+              <img
+                src={displayCourse.bannerImageUrl}
+                alt={`${displayCourse.name} banner`}
+                className="w-full h-48 sm:h-56 object-cover"
+              />
+              {/* Dark overlay for text readability */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10" />
+              {/* Course info overlay */}
+              <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="space-y-1.5 min-w-0">
+                    {displayCourse.logoUrl && (
+                      <img
+                        src={displayCourse.logoUrl}
+                        alt={`${displayCourse.name} logo`}
+                        className="h-10 sm:h-12 w-auto mb-2 drop-shadow-lg"
+                      />
+                    )}
+                    <h2 className="text-xl sm:text-2xl font-bold leading-tight text-white drop-shadow-md">
+                      {displayCourse.name}
+                    </h2>
+                    {displayCourse.city && (
+                      <div className="flex items-center gap-1.5 text-white/80 text-sm">
+                        <MapPin className="size-3.5" />
+                        <span>{displayCourse.city}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    {displayCourse.isNew && (
+                      <Badge className="bg-sky-500/80 text-white border-sky-400">
+                        <Sparkles className="size-3 mr-1" />
+                        UUSI
+                      </Badge>
+                    )}
+                    {displayCourse.isTop && (
+                      <Badge className="bg-amber-500/80 text-white border-amber-400">
+                        <Award className="size-3 mr-1" />
+                        Huippurata
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
+            </>
+          ) : (
+            /* Fallback gradient header when no banner */
+            <div className="bg-gradient-to-r from-emerald-600 to-green-700 p-5 sm:p-6 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1.5 min-w-0">
+                  {displayCourse.logoUrl && (
+                    <img
+                      src={displayCourse.logoUrl}
+                      alt={`${displayCourse.name} logo`}
+                      className="h-10 sm:h-12 w-auto mb-1 brightness-110"
+                    />
+                  )}
+                  <h2 className="text-xl sm:text-2xl font-bold leading-tight">
+                    {displayCourse.name}
+                  </h2>
+                  {displayCourse.city && (
+                    <div className="flex items-center gap-1.5 text-emerald-100 text-sm">
+                      <MapPin className="size-3.5" />
+                      <span>{displayCourse.city}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  {displayCourse.isNew && (
+                    <Badge className="bg-sky-500/80 text-white border-sky-400">
+                      <Sparkles className="size-3 mr-1" />
+                      UUSI
+                    </Badge>
+                  )}
+                  {displayCourse.isTop && (
+                    <Badge className="bg-amber-500/80 text-white border-amber-400">
+                      <Award className="size-3 mr-1" />
+                      Huippurata
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5 shrink-0">
-              {displayCourse.isNew && (
-                <Badge className="bg-sky-500/80 text-white border-sky-400">
-                  <Sparkles className="size-3 mr-1" />
-                  UUSI
-                </Badge>
-              )}
-              {displayCourse.isTop && (
-                <Badge className="bg-amber-500/80 text-white border-amber-400">
-                  <Award className="size-3 mr-1" />
-                  Huippurata
-                </Badge>
-              )}
-            </div>
-          </div>
+          )}
         </div>
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">

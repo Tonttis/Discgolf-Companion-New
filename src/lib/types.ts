@@ -49,6 +49,10 @@ export interface Course {
   ratingCount: number | null;
   detailFetchedAt: string | null;
 
+  // Banner/cover photo and logo
+  bannerImageUrl: string | null;
+  logoUrl: string | null;
+
   // Hole-by-hole details (from Väyläkuvaukset section)
   holeDetails?: Hole[];
 

@@ -40,6 +40,8 @@ interface CourseDetail {
   descriptionFull?: string;
   scorecardUrl?: string;
   ratingCount?: number;
+  bannerImageUrl?: string;
+  logoUrl?: string;
 }
 
 // ==========================================
@@ -285,6 +287,17 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
       // Store in mapUrl if not already set - but this is a detail-only field
       // We'll just note it for now
     }
+  }
+
+  // --- 8. Extract banner/cover photo and logo ---
+  const coverPhotoMatch = html.match(/class="top-course-cover-photo"\s+style="background-image:\s*url\('([^']+)'\)/);
+  if (coverPhotoMatch) {
+    (detail as Record<string, string | number | undefined>).bannerImageUrl = coverPhotoMatch[1];
+  }
+
+  const overlayLogoMatch = html.match(/class="overlay-logo">\s*<img\s+src="([^"]+)"/);
+  if (overlayLogoMatch) {
+    (detail as Record<string, string | number | undefined>).logoUrl = overlayLogoMatch[1];
   }
 
   return detail;

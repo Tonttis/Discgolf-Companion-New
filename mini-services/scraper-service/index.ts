@@ -192,6 +192,17 @@ async function scrapeCourseDetail(slug: string): Promise<Record<string, any>> {
     detail.scorecardUrl = `${BASE_URL}${href}`;
   }
 
+  // Extract banner/cover photo and logo
+  const coverPhotoMatch = html.match(/class="top-course-cover-photo"\s+style="background-image:\s*url\('([^']+)'\)/);
+  if (coverPhotoMatch) {
+    detail.bannerImageUrl = coverPhotoMatch[1];
+  }
+
+  const overlayLogoMatch = html.match(/class="overlay-logo">\s*<img\s+src="([^"]+)"/);
+  if (overlayLogoMatch) {
+    detail.logoUrl = overlayLogoMatch[1];
+  }
+
   // Extract hole-by-hole descriptions (Väyläkuvaukset)
   detail.holes = parseHolesFromHtml(html);
 
