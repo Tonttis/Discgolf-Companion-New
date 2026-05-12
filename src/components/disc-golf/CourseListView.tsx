@@ -4,50 +4,31 @@ import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Search, X, SlidersHorizontal, MapPin, Building, List, LayoutGrid } from 'lucide-react';
+import { Search, X, SlidersHorizontal, Building, Award, Sparkles, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useCourses } from '@/hooks/use-disc-golf';
+import { useCourses, useSync } from '@/hooks/use-disc-golf';
 import { CourseCard, CourseCardSkeleton } from './CourseCard';
-
-const COUNTRY_OPTIONS = [
-  { value: 'FI', label: 'Finland' },
-  { value: 'SE', label: 'Sweden' },
-  { value: 'EE', label: 'Estonia' },
-  { value: 'NO', label: 'Norway' },
-  { value: 'DK', label: 'Denmark' },
-  { value: 'DE', label: 'Germany' },
-  { value: 'US', label: 'United States' },
-  { value: 'CZ', label: 'Czech Republic' },
-  { value: 'LV', label: 'Latvia' },
-  { value: 'LT', label: 'Lithuania' },
-];
-
-type ViewMode = 'grouped' | 'flat';
+import { getClassificationLabel } from '@/lib/types';
 
 export function CourseListView() {
   const {
     searchQuery,
     setSearchQuery,
-    selectedCountry,
-    setSelectedCountry,
-    selectedArea,
-    setSelectedArea,
     selectedCity,
     setSelectedCity,
+    selectedClassification,
+    setSelectedClassification,
+    showTopOnly,
+    setShowTopOnly,
+    showNewOnly,
+    setShowNewOnly,
     navigateToCourse,
   } = useAppStore();
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  const [page, setPage] = useState(1);
 
   // Debounce search
   useEffect(() => {
@@ -57,51 +38,61 @@ export function CourseListView() {
     return () => clearTimeout(timer);
   }, [localSearch, setSearchQuery]);
 
-  const { data, isLoading, isError, error } = useCourses(selectedCountry, searchQuery || undefined);
+  // Trigger sync on first load
+  const sync = useSync();
 
-  // Derived filter values from API response
-  const areas = useMemo(() => data?.filters.areas ?? [], [data]);
+  // Reset page when filters change - use a key derived from filters
+  const filterKey = `${selectedCity}-${selectedClassification}-${showTopOnly}-${showNewOnly}`;
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
+  if (filterKey !== lastFilterKey) {
+    setLastFilterKey(filterKey);
+    setPage(1);
+  }
+
+  const { data, isLoading, isError, error } = useCourses(
+    searchQuery || undefined,
+    selectedCity || undefined,
+    selectedClassification || undefined,
+    showTopOnly || undefined,
+    showNewOnly || undefined,
+    page
+  );
+
   const cities = useMemo(() => data?.filters.cities ?? [], [data]);
-
-  // Filter course groups locally by area and city
-  const filteredGroups = useMemo(() => {
-    if (!data?.courseGroups) return [];
-    let groups = data.courseGroups;
-
-    if (selectedArea) {
-      groups = groups.filter((g) => g.parent.area === selectedArea);
-    }
-    if (selectedCity) {
-      groups = groups.filter((g) => g.parent.city === selectedCity);
-    }
-    return groups;
-  }, [data, selectedArea, selectedCity]);
-
-  // Flat list of all courses (for flat view mode)
-  const filteredCourses = useMemo(() => {
-    if (!data?.courses) return [];
-    let courses = data.courses;
-    if (selectedArea) {
-      courses = courses.filter((c) => c.area === selectedArea);
-    }
-    if (selectedCity) {
-      courses = courses.filter((c) => c.city === selectedCity);
-    }
-    // Only show parent courses and standalone layouts
-    return courses.filter((c) => c.type === 'parent' || !data.courseGroups.some((g) => g.layouts.some((l) => l.id === c.id)));
-  }, [data, selectedArea, selectedCity]);
+  const classifications = useMemo(() => data?.filters.classifications ?? [], [data]);
 
   const handleClearFilters = () => {
-    setSelectedArea('');
     setSelectedCity('');
+    setSelectedClassification('');
+    setShowTopOnly(false);
+    setShowNewOnly(false);
     setLocalSearch('');
     setSearchQuery('');
+    setPage(1);
   };
 
-  const hasActiveFilters = selectedArea || selectedCity || searchQuery;
+  const hasActiveFilters = selectedCity || selectedClassification || showTopOnly || showNewOnly || searchQuery;
 
   return (
     <div className="space-y-4">
+      {/* Sync status */}
+      {sync.isLoading && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+          <RefreshCw className="size-3 animate-spin" />
+          Loading course data from Frisbeegolfradat.fi...
+        </div>
+      )}
+      {sync.data && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{sync.data.totalCourses ?? sync.data.total ?? 0} courses from Frisbeegolfradat.fi</span>
+          {sync.data.status === 'synced' && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              Just synced
+            </Badge>
+          )}
+        </div>
+      )}
+
       {/* Search & Filter Bar */}
       <div className="space-y-3">
         <div className="flex gap-2">
@@ -109,7 +100,7 @@ export function CourseListView() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search courses..."
+              placeholder="Search courses or cities..."
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
               className="pl-9 h-10"
@@ -131,70 +122,31 @@ export function CourseListView() {
           >
             <SlidersHorizontal className="size-4" />
           </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="shrink-0"
-            onClick={() => setViewMode(viewMode === 'grouped' ? 'flat' : 'grouped')}
+        </div>
+
+        {/* Quick filter badges */}
+        <div className="flex gap-2 flex-wrap">
+          <Badge
+            variant={showTopOnly ? 'default' : 'outline'}
+            className={`cursor-pointer ${showTopOnly ? 'bg-amber-500 hover:bg-amber-600' : ''}`}
+            onClick={() => setShowTopOnly(!showTopOnly)}
           >
-            {viewMode === 'grouped' ? (
-              <List className="size-4" />
-            ) : (
-              <LayoutGrid className="size-4" />
-            )}
-          </Button>
+            <Award className="size-3 mr-1" />
+            Top Courses
+          </Badge>
+          <Badge
+            variant={showNewOnly ? 'default' : 'outline'}
+            className={`cursor-pointer ${showNewOnly ? 'bg-sky-500 hover:bg-sky-600' : ''}`}
+            onClick={() => setShowNewOnly(!showNewOnly)}
+          >
+            <Sparkles className="size-3 mr-1" />
+            New
+          </Badge>
         </div>
 
         {/* Filters Panel */}
         {showFilters && (
           <div className="space-y-3 p-4 rounded-lg border bg-card">
-            {/* Country selector */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <MapPin className="size-3" /> Country
-              </label>
-              <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Area filter */}
-            {areas.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                  <Building className="size-3" /> Area
-                </label>
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto custom-scrollbar">
-                  <Badge
-                    variant={selectedArea === '' ? 'default' : 'outline'}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedArea('')}
-                  >
-                    All
-                  </Badge>
-                  {areas.map((area) => (
-                    <Badge
-                      key={area}
-                      variant={selectedArea === area ? 'default' : 'outline'}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedArea(area)}
-                    >
-                      {area}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* City filter */}
             {cities.length > 0 && (
               <div className="space-y-1.5">
@@ -223,6 +175,34 @@ export function CourseListView() {
               </div>
             )}
 
+            {/* Classification filter */}
+            {classifications.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Award className="size-3" /> Classification
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge
+                    variant={selectedClassification === '' ? 'default' : 'outline'}
+                    className="cursor-pointer"
+                    onClick={() => setSelectedClassification('')}
+                  >
+                    All
+                  </Badge>
+                  {classifications.map((cls) => (
+                    <Badge
+                      key={cls}
+                      variant={selectedClassification === cls ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedClassification(cls)}
+                    >
+                      {getClassificationLabel(cls)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {hasActiveFilters && (
               <>
                 <Separator />
@@ -239,22 +219,12 @@ export function CourseListView() {
       {/* Results Count */}
       {data && (
         <div className="text-sm text-muted-foreground">
-          {viewMode === 'grouped'
-            ? `${filteredGroups.length} course${filteredGroups.length !== 1 ? 's' : ''}`
-            : `${filteredCourses.length} course${filteredCourses.length !== 1 ? 's' : ''}`
-          }
-          {' '}found
-          {selectedCountry && ` in ${COUNTRY_OPTIONS.find((c) => c.value === selectedCountry)?.label ?? selectedCountry}`}
-          {data.stats && (
-            <span className="ml-2 text-xs">
-              ({data.stats.parentCourses} courses, {data.stats.activeCourses} active)
-            </span>
-          )}
+          {data.pagination.total} course{data.pagination.total !== 1 ? 's' : ''} found
         </div>
       )}
 
       {/* Loading */}
-      {isLoading && (
+      {(isLoading || sync.isLoading) && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <CourseCardSkeleton key={i} />
@@ -274,7 +244,7 @@ export function CourseListView() {
       )}
 
       {/* Empty */}
-      {!isLoading && !isError && ((viewMode === 'grouped' && filteredGroups.length === 0) || (viewMode === 'flat' && filteredCourses.length === 0)) && (
+      {!isLoading && !sync.isLoading && !isError && data?.courses.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
           <div className="text-4xl">🔍</div>
           <p className="font-medium">No courses found</p>
@@ -289,33 +259,44 @@ export function CourseListView() {
         </div>
       )}
 
-      {/* Course Grid - Grouped view */}
-      {!isLoading && !isError && viewMode === 'grouped' && filteredGroups.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredGroups.map((group) => (
-            <CourseCard
-              key={group.parent.id}
-              group={group}
-              onClick={() => navigateToCourse(group.parent, group)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Course Grid - Flat view */}
-      {!isLoading && !isError && viewMode === 'flat' && filteredCourses.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredCourses.map((course) => {
-            const group = data?.courseGroups.find((g) => g.parent.id === course.id);
-            return (
+      {/* Course Grid */}
+      {!isLoading && !sync.isLoading && !isError && data && data.courses.length > 0 && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {data.courses.map((course) => (
               <CourseCard
                 key={course.id}
-                group={group ?? { parent: course, layouts: [], activeLayoutCount: course.isActive ? 1 : 0, totalLayoutCount: 1 }}
-                onClick={() => navigateToCourse(course, group ?? undefined)}
+                course={course}
+                onClick={() => navigateToCourse(course)}
               />
-            );
-          })}
-        </div>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {data.pagination.totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage(page - 1)}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {data.pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= data.pagination.totalPages}
+                onClick={() => setPage(page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

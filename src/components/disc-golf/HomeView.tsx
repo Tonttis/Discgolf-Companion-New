@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, MapPin, TreePine, Layers, Globe } from 'lucide-react';
+import { Search, MapPin, Award, Sparkles, Star } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 
 export function HomeView() {
@@ -14,11 +14,7 @@ export function HomeView() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchInput.trim()) {
-      setSearchQuery(searchInput.trim());
-    } else {
-      setSearchQuery('');
-    }
+    setSearchQuery(searchInput.trim());
     navigateToCourses();
   };
 
@@ -38,7 +34,7 @@ export function HomeView() {
                 DiscGolf Companion
               </h1>
               <p className="text-emerald-100 text-sm sm:text-base">
-                Explore courses, discover layouts, find your next round
+                Explore Finnish disc golf courses with ratings & details
               </p>
             </div>
           </div>
@@ -49,7 +45,7 @@ export function HomeView() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-white/60" />
               <Input
                 type="text"
-                placeholder="Search for courses..."
+                placeholder="Search courses or cities..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-9 h-11 bg-white/15 border-white/20 text-white placeholder:text-white/60 focus-visible:border-white/50 focus-visible:ring-white/20 backdrop-blur-sm"
@@ -66,10 +62,13 @@ export function HomeView() {
       </section>
 
       {/* Quick Actions */}
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-3">
         <Card
           className="cursor-pointer hover:border-emerald-500/50 hover:shadow-md transition-all duration-200"
-          onClick={navigateToCourses}
+          onClick={() => {
+            setSearchQuery('');
+            navigateToCourses();
+          }}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
@@ -77,85 +76,96 @@ export function HomeView() {
                 <MapPin className="size-5" />
               </div>
               <div>
-                <CardTitle className="text-base">Browse Courses</CardTitle>
-                <CardDescription>Explore disc golf courses & layouts</CardDescription>
+                <CardTitle className="text-base">All Courses</CardTitle>
+                <CardDescription>1080+ Finnish courses</CardDescription>
               </div>
             </div>
           </CardHeader>
         </Card>
 
         <Card
-          className="cursor-pointer hover:border-emerald-500/50 hover:shadow-md transition-all duration-200"
-          onClick={navigateToCourses}
+          className="cursor-pointer hover:border-amber-500/50 hover:shadow-md transition-all duration-200"
+          onClick={() => {
+            useAppStore.getState().setShowTopOnly(true);
+            navigateToCourses();
+          }}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center size-10 rounded-lg bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400">
-                <Layers className="size-5" />
+              <div className="flex items-center justify-center size-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
+                <Award className="size-5" />
               </div>
               <div>
-                <CardTitle className="text-base">Course Layouts</CardTitle>
-                <CardDescription>Find courses with multiple layouts</CardDescription>
+                <CardTitle className="text-base">Top Rated</CardTitle>
+                <CardDescription>Huippurata courses</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:border-sky-500/50 hover:shadow-md transition-all duration-200"
+          onClick={() => {
+            useAppStore.getState().setShowNewOnly(true);
+            navigateToCourses();
+          }}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center size-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400">
+                <Sparkles className="size-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base">New Courses</CardTitle>
+                <CardDescription>Recently added</CardDescription>
               </div>
             </div>
           </CardHeader>
         </Card>
       </section>
 
-      {/* Info Section */}
+      {/* How It Works */}
       <section className="rounded-xl border bg-card p-6 space-y-4">
-        <h2 className="font-semibold text-lg">How It Works</h2>
+        <h2 className="font-semibold text-lg">Course Data from Frisbeegolfradat.fi</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Browse over 1000 Finnish disc golf courses with community ratings, classifications,
+          and detailed information including location, terrain, baskets, and winter playability.
+        </p>
         <div className="grid gap-4 sm:grid-cols-3">
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+              <Star className="size-4" />
+            </div>
+            <div>
+              <h3 className="font-medium text-sm">Ratings</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Community ratings from 1-5 and AAA1-C1 classification
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+              <MapPin className="size-4" />
+            </div>
+            <div>
+              <h3 className="font-medium text-sm">Details</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Course info including terrain, baskets, maintenance & more
+              </p>
+            </div>
+          </div>
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
               <Search className="size-4" />
             </div>
             <div>
-              <h3 className="font-medium text-sm">Search</h3>
+              <h3 className="font-medium text-sm">Search & Filter</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Find courses by name, filter by country, region, or city
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
-              <TreePine className="size-4" />
-            </div>
-            <div>
-              <h3 className="font-medium text-sm">Explore</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                View course details with all layout variants and locations
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
-              <Globe className="size-4" />
-            </div>
-            <div>
-              <h3 className="font-medium text-sm">Navigate</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Get directions to any course with integrated maps links
+                Find by name, city, classification or top-rated status
               </p>
             </div>
           </div>
         </div>
-      </section>
-
-      {/* Data Source */}
-      <section className="rounded-xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground text-center">
-          Course data powered by{' '}
-          <a
-            href="https://discgolfmetrix.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-600 dark:text-emerald-400 hover:underline"
-          >
-            DiscGolfMetrix
-          </a>
-          . Data includes course locations, layout variants, and active status.
-        </p>
       </section>
     </div>
   );

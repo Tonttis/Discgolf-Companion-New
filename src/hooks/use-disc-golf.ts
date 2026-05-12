@@ -1,55 +1,56 @@
 import { useQuery } from '@tanstack/react-query';
-import type { Course, CourseGroup } from '@/lib/types';
-import { groupCourses, extractUniqueValues, getCourseStats } from '@/lib/metrix-api';
+import type { CoursesListResponse, Course, SyncResponse } from '@/lib/types';
 
-// ==========================================
-// Courses
-// ==========================================
+export function useCourses(
+  search?: string,
+  city?: string,
+  classification?: string,
+  isTop?: boolean,
+  isNew?: boolean,
+  page: number = 1
+) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (city) params.set('city', city);
+  if (classification) params.set('classification', classification);
+  if (isTop) params.set('isTop', 'true');
+  if (isNew) params.set('isNew', 'true');
+  params.set('page', page.toString());
+  params.set('limit', '60');
 
-interface CoursesResponse {
-  courses: Course[];
-  courseGroups: CourseGroup[];
-  filters: {
-    countries: string[];
-    areas: string[];
-    cities: string[];
-  };
-  stats: {
-    totalCourses: number;
-    parentCourses: number;
-    activeCourses: number;
-    cities: number;
-    areas: number;
-  };
-  total: number;
-}
-
-export function useCourses(countryCode: string, nameSearch?: string) {
-  return useQuery<CoursesResponse>({
-    queryKey: ['courses', countryCode, nameSearch],
+  return useQuery<CoursesListResponse>({
+    queryKey: ['courses', search, city, classification, isTop, isNew, page],
     queryFn: async () => {
-      const params = new URLSearchParams({ country_code: countryCode });
-      if (nameSearch && nameSearch.trim()) {
-        params.set('name', nameSearch.trim());
-      }
       const response = await fetch(`/api/courses?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch courses');
-      const data = await response.json();
-
-      const courses: Course[] = data.courses;
-      const courseGroups = groupCourses(courses);
-      const filters = extractUniqueValues(courses);
-      const stats = getCourseStats(courses);
-
-      return {
-        courses,
-        courseGroups,
-        filters,
-        stats,
-        total: courses.length,
-      };
+      return response.json();
     },
     staleTime: 5 * 60 * 1000,
-    enabled: !!countryCode,
+  });
+}
+
+export function useCourseDetail(slug: string | null) {
+  return useQuery<Course>({
+    queryKey: ['course-detail', slug],
+    queryFn: async () => {
+      const response = await fetch(`/api/courses/${slug}`);
+      if (!response.ok) throw new Error('Failed to fetch course detail');
+      return response.json();
+    },
+    enabled: slug !== null,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+export function useSync() {
+  return useQuery<SyncResponse>({
+    queryKey: ['sync'],
+    queryFn: async () => {
+      const response = await fetch('/api/sync');
+      if (!response.ok) throw new Error('Failed to sync');
+      return response.json();
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }

@@ -1,34 +1,34 @@
 import { create } from 'zustand';
-import type { AppView, Course, CourseGroup } from '@/lib/types';
+import type { AppView, Course } from '@/lib/types';
 
 interface AppStore {
   // Navigation
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
 
-  // Selected items
+  // Selected course
   selectedCourse: Course | null;
   setSelectedCourse: (course: Course | null) => void;
-  selectedCourseGroup: CourseGroup | null;
-  setSelectedCourseGroup: (group: CourseGroup | null) => void;
 
   // Filters
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  selectedCountry: string;
-  setSelectedCountry: (country: string) => void;
-  selectedArea: string;
-  setSelectedArea: (area: string) => void;
   selectedCity: string;
   setSelectedCity: (city: string) => void;
+  selectedClassification: string;
+  setSelectedClassification: (cls: string) => void;
+  showTopOnly: boolean;
+  setShowTopOnly: (show: boolean) => void;
+  showNewOnly: boolean;
+  setShowNewOnly: (show: boolean) => void;
 
   // Navigation helpers
-  navigateToCourse: (course: Course, group?: CourseGroup) => void;
+  navigateToCourse: (course: Course) => void;
   navigateHome: () => void;
   navigateToCourses: () => void;
   goBack: () => void;
 
-  // History for back navigation
+  // History
   viewHistory: AppView[];
 }
 
@@ -38,26 +38,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedCourse: null,
   setSelectedCourse: (course) => set({ selectedCourse: course }),
-  selectedCourseGroup: null,
-  setSelectedCourseGroup: (group) => set({ selectedCourseGroup: group }),
 
   searchQuery: '',
   setSearchQuery: (query) => set({ searchQuery: query }),
-  selectedCountry: 'FI',
-  setSelectedCountry: (country) => set({ selectedCountry: country, selectedArea: '', selectedCity: '' }),
-  selectedArea: '',
-  setSelectedArea: (area) => set({ selectedArea: area, selectedCity: '' }),
   selectedCity: '',
   setSelectedCity: (city) => set({ selectedCity: city }),
+  selectedClassification: '',
+  setSelectedClassification: (cls) => set({ selectedClassification: cls }),
+  showTopOnly: false,
+  setShowTopOnly: (show) => set({ showTopOnly: show }),
+  showNewOnly: false,
+  setShowNewOnly: (show) => set({ showNewOnly: show }),
 
   viewHistory: [],
 
-  navigateToCourse: (course, group) => {
+  navigateToCourse: (course) => {
     const { currentView, viewHistory } = get();
     set({
       currentView: 'course-detail',
       selectedCourse: course,
-      selectedCourseGroup: group ?? null,
       viewHistory: [...viewHistory, currentView],
     });
   },
@@ -66,10 +65,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       currentView: 'home',
       selectedCourse: null,
-      selectedCourseGroup: null,
       searchQuery: '',
-      selectedArea: '',
       selectedCity: '',
+      selectedClassification: '',
+      showTopOnly: false,
+      showNewOnly: false,
       viewHistory: [],
     });
   },
@@ -91,7 +91,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         currentView: prevView,
         viewHistory: newHistory,
         ...(prevView !== 'course-detail'
-          ? { selectedCourse: null, selectedCourseGroup: null }
+          ? { selectedCourse: null }
           : {}),
       });
     } else {
