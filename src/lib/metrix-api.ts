@@ -1,13 +1,8 @@
 import {
   MetrixCourse,
   CoursesListResponse,
-  CompetitionResponse,
   Course,
-  Track,
-  PlayerResult,
-  Player,
-  Competition,
-  SubCompetition,
+  CourseGroup,
 } from './types';
 
 const BASE_URL = 'https://discgolfmetrix.com/api.php';
@@ -26,7 +21,7 @@ export async function fetchCoursesList(
   });
 
   if (nameSearch) {
-    params.set('name', `${nameSearch}%`);
+    params.set('name', nameSearch);
   }
 
   const url = `${BASE_URL}?${params.toString()}`;
@@ -38,29 +33,6 @@ export async function fetchCoursesList(
 
   const data: CoursesListResponse = await response.json();
   return data.courses ?? [];
-}
-
-export async function fetchCompetitionResult(
-  competitionId: number,
-  className?: string
-): Promise<CompetitionResponse> {
-  const params = new URLSearchParams({
-    content: 'result',
-    id: competitionId.toString(),
-  });
-
-  if (className) {
-    params.set('class', className);
-  }
-
-  const url = `${BASE_URL}?${params.toString()}`;
-  const response = await fetch(url, { next: { revalidate: 600 } });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch competition: ${response.status}`);
-  }
-
-  return response.json();
 }
 
 // ==========================================
@@ -82,108 +54,58 @@ export function transformCourse(raw: MetrixCourse): Course {
     latitude: parseFloat(raw.X) || 0,
     longitude: parseFloat(raw.Y) || 0,
     isActive: !raw.Enddate,
+    endDate: raw.Enddate || null,
   };
 }
 
-export function transformTrack(raw: { Number: string; NumberAlt: string; Par: string }): Track {
-  return {
-    number: parseInt(raw.Number, 10),
-    numberAlt: raw.NumberAlt,
-    par: parseInt(raw.Par, 10),
-  };
-}
+// ==========================================
+// Course grouping: parent + children
+// ==========================================
 
-export function transformPlayerResult(raw: {
-  Result: string;
-  Diff: number;
-  BUE: string;
-  GRH: string;
-  OCP: string;
-  ICP: string;
-  IBP: string;
-  PEN: string;
-}): PlayerResult {
-  return {
-    result: parseInt(raw.Result, 10) || 0,
-    diff: raw.Diff,
-    bue: raw.BUE === '1',
-    grh: raw.GRH === '1',
-    ocp: raw.OCP === '1',
-    icp: raw.ICP === '1',
-    ibp: raw.IBP === '1',
-    penalty: parseInt(raw.PEN, 10) || 0,
-  };
-}
+export function groupCourses(courses: Course[]): CourseGroup[] {
+  const parentMap = new Map<string, Course>();
+  const childrenMap = new Map<string, Course[]>();
 
-export function transformPlayer(raw: {
-  UserID: string;
-  ScorecardID: string;
-  Name: string;
-  ClassName: string;
-  CountryCode: string;
-  Group: string;
-  Sum: number;
-  Diff: number;
-  DNF: string | null;
-  Place: number;
-  OrderNumber: number;
-  PlayerResults: Array<{
-    Result: string;
-    Diff: number;
-    BUE: string;
-    GRH: string;
-    OCP: string;
-    ICP: string;
-    IBP: string;
-    PEN: string;
-  }>;
-}): Player {
-  return {
-    userId: raw.UserID,
-    scorecardId: raw.ScorecardID,
-    name: raw.Name,
-    className: raw.ClassName,
-    countryCode: raw.CountryCode,
-    group: raw.Group,
-    totalStrokes: raw.Sum,
-    totalDiff: raw.Diff,
-    dnf: raw.DNF !== null,
-    place: raw.Place,
-    orderNumber: raw.OrderNumber,
-    results: raw.PlayerResults.map(transformPlayerResult),
-  };
-}
+  for (const course of courses) {
+    if (course.type === 'parent') {
+      parentMap.set(course.id, course);
+    } else {
+      const parentId = course.parentId;
+      if (!childrenMap.has(parentId)) {
+        childrenMap.set(parentId, []);
+      }
+      childrenMap.get(parentId)!.push(course);
+    }
+  }
 
-export function transformCompetition(raw: CompetitionResponse): Competition {
-  const comp = raw.Competition;
-  const tracks = comp.Tracks.map(transformTrack);
-  const totalPar = tracks.reduce((sum, t) => sum + t.par, 0);
-  const players = comp.Results.map(transformPlayer);
-  const subCompetitions: SubCompetition[] = (comp.SubCompetitions ?? []).map((sub) => {
-    const subTracks = sub.Tracks.map(transformTrack);
-    return {
-      id: sub.ID,
-      name: sub.Name,
-      tracks: subTracks,
-      players: sub.Results.map(transformPlayer),
-      totalPar: subTracks.reduce((sum, t) => sum + t.par, 0),
-    };
-  });
+  const groups: CourseGroup[] = [];
 
-  return {
-    id: comp.ID,
-    name: comp.Name,
-    type: comp.Type,
-    date: comp.Date,
-    time: comp.Time,
-    comment: comp.Comment,
-    courseName: comp.CourseName,
-    courseId: comp.CourseID,
-    tracks,
-    players,
-    subCompetitions,
-    totalPar,
-  };
+  // Add parent courses with their children
+  for (const [parentId, parent] of parentMap) {
+    const layouts = childrenMap.get(parentId) ?? [];
+    const activeLayoutCount = layouts.filter((l) => l.isActive).length;
+    groups.push({
+      parent,
+      layouts,
+      activeLayoutCount,
+      totalLayoutCount: layouts.length,
+    });
+  }
+
+  // Add standalone layout courses (orphan layouts with no parent in the result set)
+  const parentIds = new Set(parentMap.keys());
+  for (const course of courses) {
+    if (course.type === 'layout' && !parentIds.has(course.parentId)) {
+      groups.push({
+        parent: course, // The layout IS the "parent" for display
+        layouts: [],
+        activeLayoutCount: course.isActive ? 1 : 0,
+        totalLayoutCount: 1,
+      });
+    }
+  }
+
+  return groups;
 }
 
 // ==========================================
@@ -214,27 +136,50 @@ export function extractUniqueValues(
   };
 }
 
-// Score relative to par label
-export function getScoreLabel(diff: number): string {
-  if (diff < -2) return `${diff}`;
-  if (diff === -2) return '-2';
-  if (diff === -1) return '-1';
-  if (diff === 0) return 'E';
-  return `+${diff}`;
+// ==========================================
+// Helper: distance between coordinates (Haversine)
+// ==========================================
+
+export function getDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
-export function getScoreColor(diff: number): string {
-  if (diff < -1) return 'text-emerald-600 dark:text-emerald-400';
-  if (diff === -1) return 'text-green-600 dark:text-green-400';
-  if (diff === 0) return 'text-foreground';
-  if (diff === 1) return 'text-orange-500 dark:text-orange-400';
-  return 'text-red-600 dark:text-red-400';
-}
+// ==========================================
+// Helper: course stats
+// ==========================================
 
-export function getHoleScoreBg(diff: number): string {
-  if (diff <= -2) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-  if (diff === -1) return 'bg-green-500/15 text-green-700 dark:text-green-400';
-  if (diff === 0) return 'bg-muted text-foreground';
-  if (diff === 1) return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
-  return 'bg-red-500/15 text-red-700 dark:text-red-400';
+export function getCourseStats(courses: Course[]): {
+  totalCourses: number;
+  parentCourses: number;
+  activeCourses: number;
+  cities: number;
+  areas: number;
+} {
+  const parents = courses.filter((c) => c.type === 'parent');
+  const active = courses.filter((c) => c.isActive);
+  const citySet = new Set(courses.map((c) => c.city).filter(Boolean));
+  const areaSet = new Set(courses.map((c) => c.area).filter(Boolean));
+
+  return {
+    totalCourses: courses.length,
+    parentCourses: parents.length,
+    activeCourses: active.length,
+    cities: citySet.size,
+    areas: areaSet.size,
+  };
 }

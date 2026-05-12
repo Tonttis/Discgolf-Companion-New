@@ -16,7 +16,6 @@ Stage Summary:
 - Architecture planned: SPA on / route with view state management
 - Two backend API routes: /api/courses, /api/competitions
 - Four views: home, courses, course-detail, competition
-- Key data flow: courses_list for browsing, result for scorecards
 
 ---
 Task ID: 1
@@ -32,56 +31,51 @@ Work Log:
 - Created src/app/api/competitions/route.ts - GET /api/competitions?id=123
 
 Stage Summary:
-- Full type system for DiscGolfMetrix API (MetrixCourse, MetrixCompetition, Track, Player)
-- App-level types (Course, Competition, Player, Track, AppView)
-- API client with fetchCoursesList and fetchCompetitionResult
-- Data transformers from raw API to app types
-- Helpers: getScoreLabel, getScoreColor, getHoleScoreBg
-- Zustand store with navigation history, filters, and view management
-- React Query hooks: useCourses, useCompetition
+- Full type system, API client, store, hooks created
+- App built and running successfully
 
 ---
 Task ID: 2
 Agent: Full-stack Developer Subagent
 Task: Build all frontend components
 
-Work Log:
-- Created src/components/disc-golf/Providers.tsx - TanStack Query provider
-- Created src/components/disc-golf/ViewTransition.tsx - Framer Motion transitions
-- Created src/components/disc-golf/CompetitionLookup.tsx - Competition ID input
-- Created src/components/disc-golf/CourseCard.tsx - Course card with badges and skeleton
-- Created src/components/disc-golf/ScorecardTable.tsx - Scorecard with sticky columns
-- Created src/components/disc-golf/HomeView.tsx - Hero, search, quick actions
-- Created src/components/disc-golf/CourseListView.tsx - Search, filters, grid
-- Created src/components/disc-golf/CourseDetailView.tsx - Course info, maps link
-- Created src/components/disc-golf/CompetitionView.tsx - Scoreboard with tabs
-- Created src/components/disc-golf/AppShell.tsx - Header, bottom nav, footer
-- Updated src/app/page.tsx - Entry point with providers
-
 Stage Summary:
-- All 11 frontend files created with complete production-quality code
-- Emerald/green theme, dark mode support, mobile-first design
-- Debounced search, country/area/city badge filters
-- Color-coded scorecard (emerald=under par, orange=bogey, red=double+)
-- Loading skeletons, error states, empty states
-- Framer Motion view transitions
-- Custom scrollbar CSS, safe-area bottom support
+- All frontend files created with production-quality code
+- Emerald/green theme, dark mode, mobile-first design
 
 ---
 Task ID: 3
 Agent: Main Orchestrator
-Task: Polish, logo generation, and final testing
-
-Work Log:
-- Generated disc golf logo using AI image generation (public/disc-golf-logo.png)
-- Updated layout.tsx metadata for DiscGolf Companion
-- Updated AppShell header and HomeView hero to use generated logo
-- Added cross-origin config for preview panel in next.config.ts
-- Tested API endpoints: courses list returns 200, competition ID 3610901 works
-- Lint passes clean
+Task: Polish, logo generation, and testing
 
 Stage Summary:
-- App fully functional with all features working
-- API integration verified: courses list and competition results both work
-- Logo generated and integrated throughout the app
-- Clean lint, no errors
+- AI-generated disc golf logo integrated
+- App fully functional
+
+---
+Task ID: 4
+Agent: Main Orchestrator
+Task: Remove competition features, enhance course data
+
+Work Log:
+- Researched DiscGolfMetrix API: no direct course detail endpoint, only courses_list
+- Discovered parent/child course structure: Type=1 parents have multiple Type=2 layout variants
+- Removed competition-related code: CompetitionView, ScorecardTable, CompetitionLookup, competitions API route
+- Updated types.ts: removed all competition types, added CourseGroup type
+- Updated metrix-api.ts: removed competition functions, added groupCourses(), getCourseStats(), getDistanceKm()
+- Updated store: removed competition state, added selectedCourseGroup
+- Updated hooks: removed useCompetition, enhanced useCourses with grouping/stats
+- Rebuilt CourseDetailView: shows layout variants (active/inactive), course stats grid, location details, external links
+- Rebuilt CourseCard: shows layout count, active status
+- Rebuilt CourseListView: added grouped/flat view toggle, layout count display
+- Rebuilt HomeView: removed competition lookup, added how-it-works section
+- Rebuilt AppShell: removed competition view references
+
+Stage Summary:
+- Competition features fully removed
+- Course data now shows parent/child layout relationships
+- CourseGroup type groups parent courses with their layout variants
+- CourseDetailView shows all layouts with active/inactive status
+- Course stats (layouts, active, city, region) shown in detail view
+- Grouped/flat view toggle in course list
+- All lint checks pass, app running correctly

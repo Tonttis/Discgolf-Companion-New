@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Search, X, SlidersHorizontal, MapPin, Building } from 'lucide-react';
+import { Search, X, SlidersHorizontal, MapPin, Building, List, LayoutGrid } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCourses } from '@/hooks/use-disc-golf';
 import { CourseCard, CourseCardSkeleton } from './CourseCard';
@@ -31,6 +30,8 @@ const COUNTRY_OPTIONS = [
   { value: 'LT', label: 'Lithuania' },
 ];
 
+type ViewMode = 'grouped' | 'flat';
+
 export function CourseListView() {
   const {
     searchQuery,
@@ -46,6 +47,7 @@ export function CourseListView() {
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [showFilters, setShowFilters] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
 
   // Debounce search
   useEffect(() => {
@@ -61,7 +63,21 @@ export function CourseListView() {
   const areas = useMemo(() => data?.filters.areas ?? [], [data]);
   const cities = useMemo(() => data?.filters.cities ?? [], [data]);
 
-  // Filter courses locally by area and city
+  // Filter course groups locally by area and city
+  const filteredGroups = useMemo(() => {
+    if (!data?.courseGroups) return [];
+    let groups = data.courseGroups;
+
+    if (selectedArea) {
+      groups = groups.filter((g) => g.parent.area === selectedArea);
+    }
+    if (selectedCity) {
+      groups = groups.filter((g) => g.parent.city === selectedCity);
+    }
+    return groups;
+  }, [data, selectedArea, selectedCity]);
+
+  // Flat list of all courses (for flat view mode)
   const filteredCourses = useMemo(() => {
     if (!data?.courses) return [];
     let courses = data.courses;
@@ -71,15 +87,16 @@ export function CourseListView() {
     if (selectedCity) {
       courses = courses.filter((c) => c.city === selectedCity);
     }
-    return courses;
+    // Only show parent courses and standalone layouts
+    return courses.filter((c) => c.type === 'parent' || !data.courseGroups.some((g) => g.layouts.some((l) => l.id === c.id)));
   }, [data, selectedArea, selectedCity]);
 
-  const handleClearFilters = useCallback(() => {
+  const handleClearFilters = () => {
     setSelectedArea('');
     setSelectedCity('');
     setLocalSearch('');
     setSearchQuery('');
-  }, [setSelectedArea, setSelectedCity, setSearchQuery]);
+  };
 
   const hasActiveFilters = selectedArea || selectedCity || searchQuery;
 
@@ -113,6 +130,18 @@ export function CourseListView() {
             onClick={() => setShowFilters(!showFilters)}
           >
             <SlidersHorizontal className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            onClick={() => setViewMode(viewMode === 'grouped' ? 'flat' : 'grouped')}
+          >
+            {viewMode === 'grouped' ? (
+              <List className="size-4" />
+            ) : (
+              <LayoutGrid className="size-4" />
+            )}
           </Button>
         </div>
 
@@ -210,12 +239,21 @@ export function CourseListView() {
       {/* Results Count */}
       {data && (
         <div className="text-sm text-muted-foreground">
-          {filteredCourses.length} course{filteredCourses.length !== 1 ? 's' : ''} found
+          {viewMode === 'grouped'
+            ? `${filteredGroups.length} course${filteredGroups.length !== 1 ? 's' : ''}`
+            : `${filteredCourses.length} course${filteredCourses.length !== 1 ? 's' : ''}`
+          }
+          {' '}found
           {selectedCountry && ` in ${COUNTRY_OPTIONS.find((c) => c.value === selectedCountry)?.label ?? selectedCountry}`}
+          {data.stats && (
+            <span className="ml-2 text-xs">
+              ({data.stats.parentCourses} courses, {data.stats.activeCourses} active)
+            </span>
+          )}
         </div>
       )}
 
-      {/* Course Grid */}
+      {/* Loading */}
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -224,6 +262,7 @@ export function CourseListView() {
         </div>
       )}
 
+      {/* Error */}
       {isError && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
           <div className="text-4xl">😵</div>
@@ -234,7 +273,8 @@ export function CourseListView() {
         </div>
       )}
 
-      {!isLoading && !isError && filteredCourses.length === 0 && (
+      {/* Empty */}
+      {!isLoading && !isError && ((viewMode === 'grouped' && filteredGroups.length === 0) || (viewMode === 'flat' && filteredCourses.length === 0)) && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
           <div className="text-4xl">🔍</div>
           <p className="font-medium">No courses found</p>
@@ -249,15 +289,32 @@ export function CourseListView() {
         </div>
       )}
 
-      {!isLoading && !isError && filteredCourses.length > 0 && (
+      {/* Course Grid - Grouped view */}
+      {!isLoading && !isError && viewMode === 'grouped' && filteredGroups.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredCourses.map((course) => (
+          {filteredGroups.map((group) => (
             <CourseCard
-              key={course.id}
-              course={course}
-              onClick={() => navigateToCourse(course)}
+              key={group.parent.id}
+              group={group}
+              onClick={() => navigateToCourse(group.parent, group)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Course Grid - Flat view */}
+      {!isLoading && !isError && viewMode === 'flat' && filteredCourses.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredCourses.map((course) => {
+            const group = data?.courseGroups.find((g) => g.parent.id === course.id);
+            return (
+              <CourseCard
+                key={course.id}
+                group={group ?? { parent: course, layouts: [], activeLayoutCount: course.isActive ? 1 : 0, totalLayoutCount: 1 }}
+                onClick={() => navigateToCourse(course, group ?? undefined)}
+              />
+            );
+          })}
         </div>
       )}
     </div>

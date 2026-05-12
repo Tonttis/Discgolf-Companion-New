@@ -6,7 +6,6 @@ import { useAppStore } from '@/store/app-store';
 import { HomeView } from './HomeView';
 import { CourseListView } from './CourseListView';
 import { CourseDetailView } from './CourseDetailView';
-import { CompetitionView } from './CompetitionView';
 import { ViewTransition } from './ViewTransition';
 
 export function AppShell() {
@@ -26,8 +25,6 @@ export function AppShell() {
         return <CourseListView />;
       case 'course-detail':
         return <CourseDetailView />;
-      case 'competition':
-        return <CompetitionView />;
       default:
         return <HomeView />;
     }
@@ -48,7 +45,7 @@ export function AppShell() {
               onClick={navigateHome}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
-              <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-600 text-white overflow-hidden">
+              <div className="flex items-center justify-center size-8 rounded-lg overflow-hidden">
                 <img src="/disc-golf-logo.png" alt="" className="size-8 rounded-lg object-cover" />
               </div>
               <span className="font-semibold text-sm sm:text-base">

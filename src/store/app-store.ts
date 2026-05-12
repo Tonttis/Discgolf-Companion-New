@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, Course } from '@/lib/types';
+import type { AppView, Course, CourseGroup } from '@/lib/types';
 
 interface AppStore {
   // Navigation
@@ -9,8 +9,8 @@ interface AppStore {
   // Selected items
   selectedCourse: Course | null;
   setSelectedCourse: (course: Course | null) => void;
-  selectedCompetitionId: number | null;
-  setSelectedCompetitionId: (id: number | null) => void;
+  selectedCourseGroup: CourseGroup | null;
+  setSelectedCourseGroup: (group: CourseGroup | null) => void;
 
   // Filters
   searchQuery: string;
@@ -23,8 +23,7 @@ interface AppStore {
   setSelectedCity: (city: string) => void;
 
   // Navigation helpers
-  navigateToCourse: (course: Course) => void;
-  navigateToCompetition: (id: number) => void;
+  navigateToCourse: (course: Course, group?: CourseGroup) => void;
   navigateHome: () => void;
   navigateToCourses: () => void;
   goBack: () => void;
@@ -39,8 +38,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedCourse: null,
   setSelectedCourse: (course) => set({ selectedCourse: course }),
-  selectedCompetitionId: null,
-  setSelectedCompetitionId: (id) => set({ selectedCompetitionId: id }),
+  selectedCourseGroup: null,
+  setSelectedCourseGroup: (group) => set({ selectedCourseGroup: group }),
 
   searchQuery: '',
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -53,20 +52,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   viewHistory: [],
 
-  navigateToCourse: (course) => {
+  navigateToCourse: (course, group) => {
     const { currentView, viewHistory } = get();
     set({
       currentView: 'course-detail',
       selectedCourse: course,
-      viewHistory: [...viewHistory, currentView],
-    });
-  },
-
-  navigateToCompetition: (id) => {
-    const { currentView, viewHistory } = get();
-    set({
-      currentView: 'competition',
-      selectedCompetitionId: id,
+      selectedCourseGroup: group ?? null,
       viewHistory: [...viewHistory, currentView],
     });
   },
@@ -75,7 +66,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       currentView: 'home',
       selectedCourse: null,
-      selectedCompetitionId: null,
+      selectedCourseGroup: null,
       searchQuery: '',
       selectedArea: '',
       selectedCity: '',
@@ -99,8 +90,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         currentView: prevView,
         viewHistory: newHistory,
-        ...(prevView !== 'course-detail' && prevView !== 'competition'
-          ? { selectedCourse: null, selectedCompetitionId: null }
+        ...(prevView !== 'course-detail'
+          ? { selectedCourse: null, selectedCourseGroup: null }
           : {}),
       });
     } else {

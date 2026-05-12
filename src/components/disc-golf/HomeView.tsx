@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, MapPin, Trophy, TreePine } from 'lucide-react';
+import { Search, MapPin, TreePine, Layers, Globe } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { CompetitionLookup } from './CompetitionLookup';
 
 export function HomeView() {
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
@@ -17,28 +16,29 @@ export function HomeView() {
     e.preventDefault();
     if (searchInput.trim()) {
       setSearchQuery(searchInput.trim());
-      navigateToCourses();
+    } else {
+      setSearchQuery('');
     }
+    navigateToCourses();
   };
 
   return (
     <div className="space-y-8">
       {/* Hero Section */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-6 sm:p-10 text-white">
-        <div className="absolute inset-0 opacity-30" />
-        <div className="relative z-10 space-y-4">
+        <div className="relative z-10 space-y-5">
           <div className="flex items-center gap-3">
             <img
               src="/disc-golf-logo.png"
               alt="DiscGolf Companion"
-              className="size-12 rounded-xl"
+              className="size-14 rounded-xl"
             />
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 DiscGolf Companion
               </h1>
               <p className="text-emerald-100 text-sm sm:text-base">
-                Find courses, track scores, explore competitions
+                Explore courses, discover layouts, find your next round
               </p>
             </div>
           </div>
@@ -78,52 +78,84 @@ export function HomeView() {
               </div>
               <div>
                 <CardTitle className="text-base">Browse Courses</CardTitle>
-                <CardDescription>Explore disc golf courses worldwide</CardDescription>
+                <CardDescription>Explore disc golf courses & layouts</CardDescription>
               </div>
             </div>
           </CardHeader>
         </Card>
 
-        <Card>
+        <Card
+          className="cursor-pointer hover:border-emerald-500/50 hover:shadow-md transition-all duration-200"
+          onClick={navigateToCourses}
+        >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center size-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
-                <Trophy className="size-5" />
+              <div className="flex items-center justify-center size-10 rounded-lg bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400">
+                <Layers className="size-5" />
               </div>
               <div>
-                <CardTitle className="text-base">Competition Lookup</CardTitle>
-                <CardDescription>View results by competition ID</CardDescription>
+                <CardTitle className="text-base">Course Layouts</CardTitle>
+                <CardDescription>Find courses with multiple layouts</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-0">
-            <CompetitionLookup />
-          </CardContent>
         </Card>
       </section>
 
       {/* Info Section */}
-      <section className="rounded-xl border bg-card p-6 space-y-3">
-        <h2 className="font-semibold text-lg">Welcome to DiscGolf Companion</h2>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Your go-to app for exploring disc golf courses and competition results powered by
-          DiscGolfMetrix. Search for courses by name, filter by country and region, or look up
-          competition scorecards to see detailed hole-by-hole results.
-        </p>
-        <div className="grid grid-cols-3 gap-4 pt-2">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">1000+</div>
-            <div className="text-xs text-muted-foreground">Courses</div>
+      <section className="rounded-xl border bg-card p-6 space-y-4">
+        <h2 className="font-semibold text-lg">How It Works</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+              <Search className="size-4" />
+            </div>
+            <div>
+              <h3 className="font-medium text-sm">Search</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Find courses by name, filter by country, region, or city
+              </p>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">Live</div>
-            <div className="text-xs text-muted-foreground">Scores</div>
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+              <TreePine className="size-4" />
+            </div>
+            <div>
+              <h3 className="font-medium text-sm">Explore</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                View course details with all layout variants and locations
+              </p>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">Free</div>
-            <div className="text-xs text-muted-foreground">To Use</div>
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+              <Globe className="size-4" />
+            </div>
+            <div>
+              <h3 className="font-medium text-sm">Navigate</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Get directions to any course with integrated maps links
+              </p>
+            </div>
           </div>
         </div>
+      </section>
+
+      {/* Data Source */}
+      <section className="rounded-xl border bg-card p-4">
+        <p className="text-xs text-muted-foreground text-center">
+          Course data powered by{' '}
+          <a
+            href="https://discgolfmetrix.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-600 dark:text-emerald-400 hover:underline"
+          >
+            DiscGolfMetrix
+          </a>
+          . Data includes course locations, layout variants, and active status.
+        </p>
       </section>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import type { Course, Competition } from '@/lib/types';
+import type { Course, CourseGroup } from '@/lib/types';
+import { groupCourses, extractUniqueValues, getCourseStats } from '@/lib/metrix-api';
 
 // ==========================================
 // Courses
@@ -7,10 +8,18 @@ import type { Course, Competition } from '@/lib/types';
 
 interface CoursesResponse {
   courses: Course[];
+  courseGroups: CourseGroup[];
   filters: {
     countries: string[];
     areas: string[];
     cities: string[];
+  };
+  stats: {
+    totalCourses: number;
+    parentCourses: number;
+    activeCourses: number;
+    cities: number;
+    areas: number;
   };
   total: number;
 }
@@ -25,28 +34,22 @@ export function useCourses(countryCode: string, nameSearch?: string) {
       }
       const response = await fetch(`/api/courses?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch courses');
-      return response.json();
+      const data = await response.json();
+
+      const courses: Course[] = data.courses;
+      const courseGroups = groupCourses(courses);
+      const filters = extractUniqueValues(courses);
+      const stats = getCourseStats(courses);
+
+      return {
+        courses,
+        courseGroups,
+        filters,
+        stats,
+        total: courses.length,
+      };
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     enabled: !!countryCode,
-  });
-}
-
-// ==========================================
-// Competition Results
-// ==========================================
-
-export function useCompetition(competitionId: number | null, className?: string) {
-  return useQuery<Competition>({
-    queryKey: ['competition', competitionId, className],
-    queryFn: async () => {
-      const params = new URLSearchParams({ id: competitionId!.toString() });
-      if (className) params.set('class', className);
-      const response = await fetch(`/api/competitions?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch competition');
-      return response.json();
-    },
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    enabled: competitionId !== null,
   });
 }

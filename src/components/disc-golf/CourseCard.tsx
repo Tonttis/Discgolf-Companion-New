@@ -2,19 +2,24 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Navigation, TreePine } from 'lucide-react';
-import type { Course } from '@/lib/types';
+import { MapPin, Navigation, TreePine, Layers } from 'lucide-react';
+import type { Course, CourseGroup } from '@/lib/types';
 
 interface CourseCardProps {
-  course: Course;
+  group: CourseGroup;
   onClick: () => void;
 }
 
-export function CourseCard({ course, onClick }: CourseCardProps) {
+export function CourseCard({ group, onClick }: CourseCardProps) {
+  const { parent, layouts, activeLayoutCount, totalLayoutCount } = group;
   const mapsUrl =
-    course.latitude && course.longitude
-      ? `https://www.google.com/maps?q=${course.latitude},${course.longitude}`
+    parent.latitude && parent.longitude
+      ? `https://www.google.com/maps?q=${parent.latitude},${parent.longitude}`
       : null;
+
+  const displayName = parent.fullName
+    ? parent.fullName.replace(' → ', ' · ')
+    : parent.name;
 
   return (
     <Card
@@ -23,46 +28,56 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
     >
       <CardContent className="px-4 space-y-3">
         {/* Header */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-semibold text-sm leading-tight line-clamp-2">
-              {course.name}
+              {displayName}
             </h3>
             <div className="flex gap-1 shrink-0">
-              {course.type === 'parent' ? (
+              {parent.type === 'parent' ? (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                   <TreePine className="size-3 mr-0.5" />
-                  Parent
+                  Course
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                   Layout
                 </Badge>
               )}
-              {course.isActive && (
+              {parent.isActive && (
                 <Badge className="text-[10px] px-1.5 py-0 bg-emerald-600 text-white border-emerald-600">
                   Active
                 </Badge>
               )}
             </div>
           </div>
-          {course.fullName && course.fullName !== course.name && (
-            <p className="text-xs text-muted-foreground line-clamp-1">
-              {course.fullName}
-            </p>
-          )}
         </div>
+
+        {/* Layout count */}
+        {totalLayoutCount > 0 && (
+          <div className="flex items-center gap-1.5 text-xs">
+            <Layers className="size-3 text-emerald-600 dark:text-emerald-400" />
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">
+              {totalLayoutCount} layout{totalLayoutCount !== 1 ? 's' : ''}
+            </span>
+            {activeLayoutCount < totalLayoutCount && (
+              <span className="text-muted-foreground">
+                ({activeLayoutCount} active)
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Location info */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {course.city && (
+          {parent.city && (
             <span className="flex items-center gap-1">
               <MapPin className="size-3" />
-              {course.city}
+              {parent.city}
             </span>
           )}
-          {course.area && <span>{course.area}</span>}
-          {course.location && <span>{course.location}</span>}
+          {parent.area && <span>{parent.area}</span>}
+          {parent.location && <span className="line-clamp-1">{parent.location}</span>}
         </div>
 
         {/* Coordinates link */}
@@ -75,7 +90,7 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
             className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline"
           >
             <Navigation className="size-3" />
-            {course.latitude.toFixed(4)}, {course.longitude.toFixed(4)}
+            {parent.latitude.toFixed(4)}, {parent.longitude.toFixed(4)}
           </button>
         )}
       </CardContent>
