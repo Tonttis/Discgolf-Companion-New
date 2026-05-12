@@ -29,11 +29,14 @@ import {
   ChevronDown,
   ChevronUp,
   Map,
-  MessageSquare,
+  Ruler,
+  AlertTriangle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCourseDetail } from '@/hooks/use-disc-golf';
 import { getClassificationLabel, getClassificationColor, getClassificationBg } from '@/lib/types';
+import type { Hole } from '@/lib/types';
 
 export function CourseDetailView() {
   const selectedCourse = useAppStore((s) => s.selectedCourse);
@@ -74,6 +77,12 @@ export function CourseDetailView() {
   const fullDesc = displayCourse.descriptionFull || displayCourse.description;
   const shortDesc = displayCourse.description;
   const hasLongDescription = !!displayCourse.descriptionFull && displayCourse.descriptionFull !== displayCourse.description;
+
+  // Hole details
+  const holes = displayCourse.holeDetails ?? [];
+  const hasHoles = holes.length > 0;
+  const totalPar = holes.reduce((sum, h) => sum + (h.par ?? 0), 0);
+  const totalLength = holes.reduce((sum, h) => sum + (h.length ?? 0), 0);
 
   return (
     <div className="space-y-5">
@@ -204,6 +213,11 @@ export function CourseDetailView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Väyläkuvaukset - Hole-by-hole descriptions */}
+      {hasHoles && (
+        <HoleDescriptions holes={holes} totalPar={totalPar} totalLength={totalLength} />
+      )}
 
       {/* Location */}
       <Card>
@@ -337,6 +351,180 @@ export function CourseDetailView() {
     </div>
   );
 }
+
+// ==========================================
+// Hole Descriptions Section
+// ==========================================
+
+function HoleDescriptions({ holes, totalPar, totalLength }: { holes: Hole[]; totalPar: number; totalLength: number }) {
+  const [expandedHole, setExpandedHole] = useState<number | null>(null);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Target className="size-4 text-emerald-600 dark:text-emerald-400" />
+          Väyläkuvaukset
+        </CardTitle>
+        {/* Summary row */}
+        {(totalPar > 0 || totalLength > 0) && (
+          <div className="flex gap-4 text-sm text-muted-foreground mt-1">
+            {totalPar > 0 && (
+              <span>Par <strong className="text-foreground">{totalPar}</strong></span>
+            )}
+            {totalLength > 0 && (
+              <span>Yhteensä <strong className="text-foreground">{totalLength}</strong> m</span>
+            )}
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {holes.map((hole) => (
+          <HoleCard
+            key={hole.holeNumber}
+            hole={hole}
+            isExpanded={expandedHole === hole.holeNumber}
+            onToggle={() => setExpandedHole(expandedHole === hole.holeNumber ? null : hole.holeNumber)}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function HoleCard({ hole, isExpanded, onToggle }: { hole: Hole; isExpanded: boolean; onToggle: () => void }) {
+  const hasImage = !!hole.imageUrl || !!hole.thumbUrl;
+  const hasNote = !!hole.note;
+
+  return (
+    <div
+      className={`rounded-lg border transition-all duration-200 ${
+        hasNote && !hole.length
+          ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20'
+          : isExpanded
+          ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/20'
+          : 'hover:border-emerald-200 dark:hover:border-emerald-800'
+      }`}
+    >
+      {/* Header row - always visible */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 p-3 text-left"
+      >
+        {/* Hole number badge */}
+        <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 font-bold text-sm ${
+          hasNote && !hole.length
+            ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
+            : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400'
+        }`}>
+          {hole.holeNumber}
+        </div>
+
+        {/* Hole info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium truncate">
+              Väylä {hole.holeNumber}
+            </span>
+            {hasNote && !hole.length && (
+              <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />
+            )}
+            {hasImage && (
+              <ImageIcon className="size-3.5 text-muted-foreground shrink-0" />
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+            {hole.length ? (
+              <span className="flex items-center gap-1">
+                <Ruler className="size-3" />
+                {hole.length} m
+              </span>
+            ) : null}
+            {hole.par ? (
+              <span>Par {hole.par}</span>
+            ) : null}
+            {hasNote && !hole.length && (
+              <span className="text-amber-600 dark:text-amber-400 truncate">
+                Ei pelattavissa
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Expand chevron */}
+        <div className="shrink-0 text-muted-foreground">
+          {isExpanded ? (
+            <ChevronUp className="size-4" />
+          ) : (
+            <ChevronDown className="size-4" />
+          )}
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="px-3 pb-3 space-y-3">
+          <Separator />
+
+          {/* Hole image */}
+          {hasImage && (
+            <a
+              href={hole.imageUrl || hole.thumbUrl || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-lg overflow-hidden border hover:opacity-90 transition-opacity"
+            >
+              <img
+                src={hole.thumbUrl || hole.imageUrl || ''}
+                alt={hole.name}
+                className="w-full h-auto max-h-64 object-contain bg-gray-50 dark:bg-gray-900"
+                loading="lazy"
+              />
+            </a>
+          )}
+
+          {/* Full name */}
+          <p className="text-sm font-medium">{hole.name}</p>
+
+          {/* Length and par */}
+          <div className="flex gap-4">
+            {hole.length && (
+              <div className="flex items-center gap-1.5 text-sm">
+                <Ruler className="size-4 text-emerald-600 dark:text-emerald-400" />
+                <span>{hole.length} metriä</span>
+              </div>
+            )}
+            {hole.par && (
+              <div className="flex items-center gap-1.5 text-sm">
+                <Flag className="size-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Par {hole.par}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Note / warning */}
+          {hasNote && (
+            <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-300">{hole.note}</p>
+            </div>
+          )}
+
+          {/* No image available note */}
+          {!hasImage && hole.length && (
+            <p className="text-xs text-muted-foreground italic">
+              Ei väyläkuvaa saatavilla
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// Helper Components
+// ==========================================
 
 function DetailRow({
   icon,

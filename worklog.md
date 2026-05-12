@@ -40,3 +40,34 @@ Stage Summary:
 - Two services required: Next.js (port 3000) + Scraper microservice (port 3030)
 - Caddy gateway on port 81 proxies to Next.js by default, with XTransformPort for scraper
 - All data sourced from frisbeegolfradat.fi via z-ai-web-dev-sdk page_reader
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Add hole-by-hole descriptions (Väyläkuvaukset) with images to course detail scraping and display
+
+Work Log:
+- Examined HTML structure of frisbeegolfradat.fi course pages using z-ai page_reader CLI
+- Discovered hole data is in `<span class="fairway">` elements with `fairway_image` and `fairway_desc` divs
+- Added `Hole` model to Prisma schema with fields: holeNumber, name, length, par, note, imageUrl, thumbUrl
+- Added `holeDetails` relation on Course model
+- Updated scraper service to parse hole data from first layout tab only (to avoid duplicate hole numbers from multiple layouts)
+- Scraper extracts: hole number, name, length (meters), par, notes (e.g. "HUOM! 3-väylä ei ole toistaiseksi pelattavissa."), full-size image URL, thumbnail URL
+- Updated API route to save hole data separately in Hole table with deduplication by holeNumber
+- Updated TypeScript types to include Hole interface and holeDetails on Course
+- Updated CourseDetailView with new Väyläkuvaukset section featuring:
+  - Summary row showing total Par and total length
+  - Expandable hole cards with hole number badge, length, par
+  - Amber warning styling for unavailable holes (no length/par)
+  - Expandable detail view with hole image, full stats, and warning notes
+  - Image thumbnails that link to full-size images
+- Fixed bug: scraper was returning holes from ALL layout tabs (causing duplicate holeNumber constraint violations)
+- Fixed bug: `skipDuplicates` not supported by Prisma SQLite, removed and used manual deduplication instead
+- Tested end-to-end: KIPPIS Inter returns 18 holes (13 with images, 5 with "not playable" notes), KIPPIS Am returns 18 holes with images
+
+Stage Summary:
+- Hole-by-hole descriptions with images now scraped and displayed
+- Data includes: length (meters), par, notes, full-size image, thumbnail
+- First layout tab only (avoids duplicates from multi-layout courses)
+- Courses with unavailable holes show amber warning styling
+- Lint clean, all tests passing

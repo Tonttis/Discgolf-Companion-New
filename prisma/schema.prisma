@@ -45,4 +45,23 @@ model Course {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Hole-by-hole descriptions (from Väyläkuvaukset section)
+  holeDetails Hole[]
+}
+
+model Hole {
+  id          Int      @id @default(autoincrement())
+  courseId    Int
+  holeNumber Int      // 1, 2, 3...
+  name       String   // e.g. "KIPPIS Inter DGP #1"
+  length     Int?     // meters (null if not available)
+  par        Int?     // null if not available
+  note       String?  // e.g. "HUOM! 3-väylä ei ole toistaiseksi pelattavissa."
+  imageUrl   String?  // full-size hole image URL
+  thumbUrl   String?  // thumbnail image URL
+
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, holeNumber])
 }

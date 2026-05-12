@@ -4,6 +4,61 @@ import { db } from '@/lib/db';
 const SCRAPER_PORT = 3030;
 const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
 
+interface ScraperHole {
+  holeNumber: number;
+  name: string;
+  length: number | null;
+  par: number | null;
+  note: string | null;
+  imageUrl: string | null;
+  thumbUrl: string | null;
+}
+
+async function saveDetailData(slug: string, detail: Record<string, any>) {
+  // Separate holes from course fields
+  const { holes, ...courseFields } = detail;
+  delete courseFields.holes;
+
+  // Update course fields
+  await db.course.update({
+    where: { slug },
+    data: {
+      ...courseFields,
+      detailFetchedAt: new Date(),
+    },
+  });
+
+  // Save hole data if present
+  if (Array.isArray(holes) && holes.length > 0) {
+    const courseId = (await db.course.findUnique({ where: { slug }, select: { id: true } }))?.id;
+    if (courseId) {
+      // Delete existing holes and recreate
+      await db.hole.deleteMany({ where: { courseId } });
+
+      // Deduplicate holes by holeNumber (keep first occurrence)
+      const seen = new Set<number>();
+      const uniqueHoles = holes.filter((h: ScraperHole) => {
+        if (seen.has(h.holeNumber)) return false;
+        seen.add(h.holeNumber);
+        return true;
+      });
+
+      await db.hole.createMany({
+        data: uniqueHoles.map((h: ScraperHole) => ({
+          courseId,
+          holeNumber: h.holeNumber,
+          name: h.name,
+          length: h.length,
+          par: h.par,
+          note: h.note,
+          imageUrl: h.imageUrl,
+          thumbUrl: h.thumbUrl,
+        })),
+      });
+    }
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
@@ -11,7 +66,10 @@ export async function GET(
   try {
     const { slug } = await params;
 
-    let course = await db.course.findUnique({ where: { slug } });
+    let course = await db.course.findUnique({
+      where: { slug },
+      include: { holeDetails: { orderBy: { holeNumber: 'asc' } } },
+    });
 
     if (!course) {
       return NextResponse.json(
@@ -32,14 +90,11 @@ export async function GET(
         if (scraperResponse.ok) {
           const scraperData = await scraperResponse.json();
           if (scraperData.success && scraperData.detail) {
-            await db.course.update({
+            await saveDetailData(slug, scraperData.detail);
+            course = await db.course.findUnique({
               where: { slug },
-              data: {
-                ...scraperData.detail,
-                detailFetchedAt: new Date(),
-              },
+              include: { holeDetails: { orderBy: { holeNumber: 'asc' } } },
             });
-            course = await db.course.findUnique({ where: { slug } });
           }
         }
       } catch (error) {
@@ -62,13 +117,7 @@ export async function GET(
             if (res.ok) {
               const data = await res.json();
               if (data.success && data.detail) {
-                await db.course.update({
-                  where: { slug },
-                  data: {
-                    ...data.detail,
-                    detailFetchedAt: new Date(),
-                  },
-                });
+                await saveDetailData(slug, data.detail);
               }
             }
           })

@@ -2,6 +2,18 @@
 // Frisbeegolfradat.fi Course Types
 // ==========================================
 
+export interface Hole {
+  id: number;
+  courseId: number;
+  holeNumber: number;
+  name: string;
+  length: number | null;
+  par: number | null;
+  note: string | null;
+  imageUrl: string | null;
+  thumbUrl: string | null;
+}
+
 export interface Course {
   id: number;
   slug: string;
@@ -36,6 +48,9 @@ export interface Course {
   scorecardUrl: string | null;
   ratingCount: number | null;
   detailFetchedAt: string | null;
+
+  // Hole-by-hole details (from Väyläkuvaukset section)
+  holeDetails?: Hole[];
 
   createdAt: string;
   updatedAt: string;

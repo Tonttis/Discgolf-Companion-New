@@ -192,7 +192,104 @@ async function scrapeCourseDetail(slug: string): Promise<Record<string, any>> {
     detail.scorecardUrl = `${BASE_URL}${href}`;
   }
 
+  // Extract hole-by-hole descriptions (Väyläkuvaukset)
+  detail.holes = parseHolesFromHtml(html);
+
   return detail;
+}
+
+interface ScrapedHole {
+  holeNumber: number;
+  name: string;
+  length: number | null;
+  par: number | null;
+  note: string | null;
+  imageUrl: string | null;
+  thumbUrl: string | null;
+}
+
+function parseHolesFromHtml(html: string): ScrapedHole[] {
+  const holes: ScrapedHole[] = [];
+
+  // Only parse the first layout tab to avoid duplicate hole numbers
+  // The first layout is in <div class="layout_tab active tab-1">
+  const firstLayoutMatch = html.match(/<div\s+class="layout_tab\s+active\s+tab-1">([\s\S]*?)(?:<div\s+class="layout_tab\s+tab-|<\/div>\s*<\/div>)/);
+  const searchHtml = firstLayoutMatch ? firstLayoutMatch[1] : html;
+
+  // Find all <span class="fairway"> blocks within the first layout only
+  const fairwayRegex = /<span\s+class="fairway">([\s\S]*?)<\/span>/g;
+  let fairwayMatch;
+
+  while ((fairwayMatch = fairwayRegex.exec(searchHtml)) !== null) {
+    const fairwayHtml = fairwayMatch[1];
+
+    // Extract image URLs from fairway_image div
+    let imageUrl: string | null = null;
+    let thumbUrl: string | null = null;
+
+    const imageDivMatch = fairwayHtml.match(/<div\s+class="fairway_image">([\s\S]*?)<\/div>/);
+    if (imageDivMatch) {
+      const imageHtml = imageDivMatch[1];
+      // Full-size image from <a href="...">
+      const fullImgMatch = imageHtml.match(/<a\s+href="([^"]+)"[^>]*>/);
+      if (fullImgMatch) imageUrl = fullImgMatch[1];
+      // Thumbnail from <img src="...">
+      const thumbMatch = imageHtml.match(/<img\s+src="([^"]+)"/);
+      if (thumbMatch) thumbUrl = thumbMatch[1];
+    }
+
+    // Extract hole description
+    const descDivMatch = fairwayHtml.match(/<div\s+class="fairway_desc">([\s\S]*?)<\/div>/);
+    if (!descDivMatch) continue;
+
+    const descHtml = descDivMatch[1];
+
+    // Extract hole name from <h4>
+    const h4Match = descHtml.match(/<h4>([\s\S]*?)<\/h4>/);
+    if (!h4Match) continue;
+    const name = stripHtml(h4Match[1]).trim();
+
+    // Extract hole number from name like "Väylä 1: ..." or "Väylä 10: ..."
+    const numMatch = name.match(/Väylä\s+(\d+)/i);
+    const holeNumber = numMatch ? parseInt(numMatch[1], 10) : 0;
+    if (!holeNumber) continue;
+
+    // Extract length and par from <p>Pituus 87 metriä. Par 3</p>
+    let length: number | null = null;
+    let par: number | null = null;
+    let note: string | null = null;
+
+    const pTags = descHtml.match(/<p>([\s\S]*?)<\/p>/g) ?? [];
+    for (const pTag of pTags) {
+      const pText = stripHtml(pTag).trim();
+      if (!pText) continue;
+
+      // Try to parse "Pituus 87 metriä. Par 3"
+      const lengthMatch = pText.match(/Pituus\s+(\d+)\s+metri/i);
+      if (lengthMatch) length = parseInt(lengthMatch[1], 10);
+
+      const parMatch = pText.match(/Par\s+(\d+)/i);
+      if (parMatch) par = parseInt(parMatch[1], 10);
+
+      // Anything after the Pituus/Par line that's not empty is a note
+      // e.g. "HUOM! 3-väylä ei ole toistaiseksi pelattavissa."
+      if (!pText.includes('Pituus') && !pText.includes('Par')) {
+        note = pText;
+      }
+    }
+
+    holes.push({
+      holeNumber,
+      name,
+      length,
+      par,
+      note,
+      imageUrl,
+      thumbUrl,
+    });
+  }
+
+  return holes;
 }
 
 // Simple HTTP server
