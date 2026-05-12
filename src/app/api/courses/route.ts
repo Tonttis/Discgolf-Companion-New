@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+// Cache filters for 5 minutes to avoid querying all courses on every request
+let filtersCache: { cities: string[]; classifications: string[]; timestamp: number } | null = null;
+const FILTERS_CACHE_TTL = 5 * 60 * 1000;
+
+async function getFilters() {
+  if (filtersCache && Date.now() - filtersCache.timestamp < FILTERS_CACHE_TTL) {
+    return filtersCache;
+  }
+
+  const allCourses = await db.course.findMany({
+    select: { city: true, classification: true },
+    orderBy: { city: 'asc' },
+  });
+  const cities = [...new Set(allCourses.map((c) => c.city).filter(Boolean))].sort();
+  const classifications = [...new Set(allCourses.map((c) => c.classification).filter(Boolean))].sort();
+
+  filtersCache = { cities, classifications, timestamp: Date.now() };
+  return filtersCache;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -37,7 +57,7 @@ export async function GET(request: NextRequest) {
       where.isNew = true;
     }
 
-    const [courses, total] = await Promise.all([
+    const [courses, total, filters] = await Promise.all([
       db.course.findMany({
         where,
         orderBy: [
@@ -49,19 +69,12 @@ export async function GET(request: NextRequest) {
         take: limit,
       }),
       db.course.count({ where }),
+      getFilters(),
     ]);
-
-    // Get unique cities for filters
-    const allCourses = await db.course.findMany({
-      select: { city: true, classification: true },
-      orderBy: { city: 'asc' },
-    });
-    const cities = [...new Set(allCourses.map((c) => c.city).filter(Boolean))].sort();
-    const classifications = [...new Set(allCourses.map((c) => c.classification).filter(Boolean))].sort();
 
     return NextResponse.json({
       courses,
-      filters: { cities, classifications },
+      filters: { cities: filters.cities, classifications: filters.classifications },
       pagination: {
         page,
         limit,

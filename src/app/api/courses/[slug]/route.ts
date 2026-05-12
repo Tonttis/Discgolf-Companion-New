@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { fetchAndCacheCourseDetail } from '@/lib/scraper/frisbeegolfradat';
+
+const SCRAPER_PORT = 3030;
+const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
 
 export async function GET(
   request: NextRequest,
@@ -18,10 +20,28 @@ export async function GET(
       );
     }
 
-    // If detail hasn't been fetched yet, fetch it now
+    // If detail hasn't been fetched yet, fetch it from the scraper service
     if (!course.detailFetchedAt) {
       try {
-        course = await fetchAndCacheCourseDetail(slug);
+        const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/detail`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug }),
+        });
+
+        if (scraperResponse.ok) {
+          const scraperData = await scraperResponse.json();
+          if (scraperData.success && scraperData.detail) {
+            await db.course.update({
+              where: { slug },
+              data: {
+                ...scraperData.detail,
+                detailFetchedAt: new Date(),
+              },
+            });
+            course = await db.course.findUnique({ where: { slug } });
+          }
+        }
       } catch (error) {
         console.error(`Failed to fetch detail for ${slug}:`, error);
         // Return basic data even if detail fetch fails
@@ -29,11 +49,30 @@ export async function GET(
     }
 
     // Check if detail is stale (older than 24 hours) and refresh in background
-    if (course.detailFetchedAt) {
+    if (course?.detailFetchedAt) {
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
       if (course.detailFetchedAt < staleThreshold) {
         // Fire and forget refresh
-        fetchAndCacheCourseDetail(slug).catch(() => {});
+        fetch(`${SCRAPER_BASE}/scrape/detail`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug }),
+        })
+          .then(async (res) => {
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.detail) {
+                await db.course.update({
+                  where: { slug },
+                  data: {
+                    ...data.detail,
+                    detailFetchedAt: new Date(),
+                  },
+                });
+              }
+            }
+          })
+          .catch(() => {});
       }
     }
 
