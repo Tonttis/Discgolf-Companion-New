@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -32,19 +33,49 @@ import {
   Ruler,
   AlertTriangle,
   Image as ImageIcon,
+  Play,
+  Heart,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useCourseDetail } from '@/hooks/use-disc-golf';
+import { useCourseDetail, useFavorites, useToggleFavorite } from '@/hooks/use-disc-golf';
+import { useAuth } from '@/lib/auth/auth-context';
 import { getClassificationLabel, getClassificationColor, getClassificationBg } from '@/lib/types';
 import type { Hole } from '@/lib/types';
 
 export function CourseDetailView() {
   const selectedCourse = useAppStore((s) => s.selectedCourse);
+  const navigateToNewGame = useAppStore((s) => s.navigateToNewGame);
+  const navigateToAuth = useAppStore((s) => s.navigateToAuth);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
   const { data: course, isLoading } = useCourseDetail(
     selectedCourse?.slug ?? null
   );
+
+  // Favorites
+  const { data: favoritesData } = useFavorites();
+  const toggleFavorite = useToggleFavorite();
+  const { isAuthenticated } = useAuth();
+
+  const courseSlug = course?.slug ?? selectedCourse?.slug ?? '';
+  const isFavorited = favoritesData?.favorites?.some((f) => f.courseSlug === courseSlug) ?? false;
+
+  const handleToggleFavorite = () => {
+    if (!isAuthenticated) {
+      navigateToAuth();
+      return;
+    }
+    toggleFavorite.mutate({ courseSlug, isFavorited });
+  };
+
+  const handleStartGame = () => {
+    if (!isAuthenticated) {
+      navigateToAuth();
+      return;
+    }
+    navigateToNewGame(course ?? selectedCourse!);
+  };
 
   if (!selectedCourse && !course) {
     return (
@@ -197,6 +228,34 @@ export function CourseDetailView() {
                 {getClassificationLabel(displayCourse.classification)}
               </span>
             )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 mt-4">
+            <Button
+              onClick={handleStartGame}
+              className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            >
+              <Play className="size-4 mr-2" />
+              Aloita peli
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className={`size-11 shrink-0 transition-colors ${
+                isFavorited
+                  ? 'text-rose-500 border-rose-200 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+                  : 'text-muted-foreground hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-800'
+              }`}
+              onClick={handleToggleFavorite}
+              disabled={toggleFavorite.isPending}
+            >
+              {toggleFavorite.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Heart className={`size-5 ${isFavorited ? 'fill-rose-500' : ''}`} />
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>

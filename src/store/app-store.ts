@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, Course } from '@/lib/types';
+import type { AppView, Course, Game } from '@/lib/types';
 
 interface AppStore {
   // Navigation
@@ -9,6 +9,14 @@ interface AppStore {
   // Selected course
   selectedCourse: Course | null;
   setSelectedCourse: (course: Course | null) => void;
+
+  // Active game
+  activeGame: Game | null;
+  setActiveGame: (game: Game | null) => void;
+
+  // Selected game (for viewing past game details)
+  selectedGame: Game | null;
+  setSelectedGame: (game: Game | null) => void;
 
   // Filters
   searchQuery: string;
@@ -26,6 +34,13 @@ interface AppStore {
   navigateToCourse: (course: Course) => void;
   navigateHome: () => void;
   navigateToCourses: () => void;
+  navigateToAuth: () => void;
+  navigateToProfile: () => void;
+  navigateToNewGame: (course?: Course) => void;
+  navigateToActiveGame: (game: Game) => void;
+  navigateToGameHistory: () => void;
+  navigateToGameDetail: (game: Game) => void;
+  navigateToFavorites: () => void;
   goBack: () => void;
 
   // History
@@ -38,6 +53,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedCourse: null,
   setSelectedCourse: (course) => set({ selectedCourse: course }),
+
+  activeGame: null,
+  setActiveGame: (game) => set({ activeGame: game }),
+
+  selectedGame: null,
+  setSelectedGame: (game) => set({ selectedGame: game }),
 
   searchQuery: '',
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -65,6 +86,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       currentView: 'home',
       selectedCourse: null,
+      activeGame: null,
       searchQuery: '',
       selectedCity: '',
       selectedClassification: '',
@@ -82,6 +104,65 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
 
+  navigateToAuth: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'auth',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToProfile: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'profile',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToNewGame: (course) => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'new-game',
+      selectedCourse: course ?? get().selectedCourse,
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToActiveGame: (game) => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'active-game',
+      activeGame: game,
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToGameHistory: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'game-history',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToGameDetail: (game) => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'game-detail',
+      selectedGame: game,
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToFavorites: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'favorites',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
   goBack: () => {
     const { viewHistory } = get();
     if (viewHistory.length > 0) {
@@ -90,9 +171,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         currentView: prevView,
         viewHistory: newHistory,
-        ...(prevView !== 'course-detail'
-          ? { selectedCourse: null }
-          : {}),
+        ...(prevView !== 'course-detail' ? { selectedCourse: get().selectedCourse } : {}),
+        ...(prevView !== 'active-game' ? {} : {}),
+        ...(prevView !== 'game-detail' ? {} : {}),
       });
     } else {
       set({ currentView: 'home' });

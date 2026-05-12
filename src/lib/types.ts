@@ -92,7 +92,99 @@ export interface SyncResponse {
 // View State Types
 // ==========================================
 
-export type AppView = 'home' | 'courses' | 'course-detail';
+export type AppView =
+  | 'home'
+  | 'courses'
+  | 'course-detail'
+  | 'auth'
+  | 'profile'
+  | 'new-game'
+  | 'active-game'
+  | 'game-summary'
+  | 'game-history'
+  | 'game-detail'
+  | 'favorites';
+
+// ==========================================
+// Auth & User Types
+// ==========================================
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthState {
+  user: UserProfile | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  supabaseConfigured: boolean;
+}
+
+// ==========================================
+// Game Types
+// ==========================================
+
+export type GameStatus = 'in_progress' | 'completed' | 'abandoned';
+
+export interface Game {
+  id: string;
+  courseSlug: string;
+  courseName: string;
+  totalHoles: number;
+  totalPar: number;
+  createdBy: string;
+  status: GameStatus;
+  startedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  players: GamePlayer[];
+  scores: Score[];
+}
+
+export interface GamePlayer {
+  id: string;
+  gameId: string;
+  userId: string;
+  username: string;
+  displayName: string | null;
+  joinedAt: string;
+}
+
+export interface Score {
+  id: string;
+  gameId: string;
+  playerId: string;
+  holeNumber: number;
+  throws: number;
+  par: number | null;
+}
+
+export interface PlayerScoreSummary {
+  playerId: string;
+  userId: string;
+  username: string;
+  displayName: string | null;
+  totalThrows: number;
+  totalPar: number;
+  diffFromPar: number;
+  holeScores: { holeNumber: number; throws: number; par: number | null; diff: number }[];
+}
+
+// ==========================================
+// Favorites Types
+// ==========================================
+
+export interface Favorite {
+  id: string;
+  userId: string;
+  courseSlug: string;
+  createdAt: string;
+}
 
 // ==========================================
 // Classification Labels
@@ -132,4 +224,43 @@ export function getClassificationBg(code: string): string {
   if (code.startsWith('bb')) return 'bg-amber-500/15';
   if (code.startsWith('b')) return 'bg-orange-500/15';
   return 'bg-muted';
+}
+
+// Score naming helpers
+export function getScoreName(throws: number, par: number | null): string {
+  if (!par) return '';
+  const diff = throws - par;
+  if (throws === 1) return 'Ace!';
+  if (diff <= -3) return 'Albatross';
+  if (diff === -2) return 'Eagle';
+  if (diff === -1) return 'Birdie';
+  if (diff === 0) return 'Par';
+  if (diff === 1) return 'Bogey';
+  if (diff === 2) return 'Double Bogey';
+  if (diff === 3) return 'Triple Bogey';
+  return `+${diff}`;
+}
+
+export function getScoreColor(throws: number, par: number | null): string {
+  if (!par) return '';
+  const diff = throws - par;
+  if (throws === 1) return 'text-purple-600 dark:text-purple-400';
+  if (diff <= -2) return 'text-emerald-600 dark:text-emerald-400';
+  if (diff === -1) return 'text-green-600 dark:text-green-400';
+  if (diff === 0) return 'text-foreground';
+  if (diff === 1) return 'text-orange-600 dark:text-orange-400';
+  if (diff === 2) return 'text-red-600 dark:text-red-400';
+  return 'text-red-700 dark:text-red-400';
+}
+
+export function getScoreBg(throws: number, par: number | null): string {
+  if (!par) return '';
+  const diff = throws - par;
+  if (throws === 1) return 'bg-purple-500/15';
+  if (diff <= -2) return 'bg-emerald-500/15';
+  if (diff === -1) return 'bg-green-500/15';
+  if (diff === 0) return '';
+  if (diff === 1) return 'bg-orange-500/15';
+  if (diff === 2) return 'bg-red-500/15';
+  return 'bg-red-500/20';
 }
