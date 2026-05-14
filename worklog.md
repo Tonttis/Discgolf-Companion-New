@@ -32,3 +32,53 @@ Stage Summary:
 - All Finnish language throughout
 - Supabase integration ready (migration.sql exists, .env has placeholders)
 - Zero lint errors
+
+---
+Task ID: 2
+Agent: main
+Task: Connect Supabase with real credentials and set up database schema
+
+Work Log:
+- Created .env.local with real Supabase credentials (URL + PUBLISHABLE_KEY)
+- Updated all Supabase client files to use NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (was NEXT_PUBLIC_SUPABASE_ANON_KEY)
+- Updated: src/lib/supabase/client.ts, server.ts, config.ts, middleware.ts
+- Updated AuthView.tsx setup guide to show correct env var name
+- Created /api/setup route.ts - checks database status and provides migration SQL
+- Attempted to apply migration SQL via direct DB connection (failed - no DB password)
+- Updated HomeView.tsx with DatabaseSetupBanner component for migration guidance
+- Banner shows when DB tables don't exist, with "Copy SQL" and "Open SQL Editor" buttons
+- Added "Tarkista uudelleen" (Check again) button to re-verify after applying migration
+- Removed pg package dependency (caused Module not found error)
+- Both services running: Next.js on port 3000, scraper on port 3030
+- Zero lint errors
+- Verified /api/setup correctly returns needs_migration status
+
+Stage Summary:
+- Supabase is connected with real credentials
+- Database tables need to be created via Supabase SQL Editor (user action)
+- Home page shows setup banner with SQL copy + dashboard link
+- All client code properly references NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+
+---
+Task ID: 3
+Agent: main
+Task: Set up stable dev server and verify full app functionality
+
+Work Log:
+- Discovered background processes were being killed by sandbox environment
+- Installed and configured PM2 for persistent process management
+- Next.js dev server running on port 3000 via PM2 (name: nextjs)
+- Scraper service running on port 3030 via PM2 (name: scraper)
+- PM2 configuration saved at /home/z/.pm2/dump.pm2
+- Verified all API endpoints working:
+  - Homepage: 200
+  - /api/courses: 1080 courses
+  - /api/setup: needs_migration status correctly detected
+- Zero lint errors
+- App compiles and serves correctly with Turbopack
+
+Stage Summary:
+- PM2 provides stable process management for both services
+- All API endpoints verified working
+- App is functional but needs database migration applied by user via Supabase Dashboard
+- Key user action needed: Run migration SQL in Supabase SQL Editor

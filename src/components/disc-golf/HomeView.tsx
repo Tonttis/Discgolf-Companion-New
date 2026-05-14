@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,20 +10,138 @@ import {
   Award,
   Sparkles,
   Star,
-  Play,
   Heart,
   Trophy,
-  Clock,
-  User,
   Gamepad2,
+  Database,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
+import { toast } from 'sonner';
+
+interface SetupStatus {
+  configured: boolean;
+  status: 'not_configured' | 'needs_migration' | 'ready' | 'error';
+  message: string;
+  dashboardUrl?: string;
+  migrationSql?: string;
+}
+
+function DatabaseSetupBanner() {
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  const checkSetup = async () => {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/setup');
+      const data = await res.json();
+      setSetupStatus(data);
+    } catch {
+      setSetupStatus({ configured: false, status: 'error', message: 'Failed to check database status' });
+    } finally {
+      setLoading(false);
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    checkSetup();
+  }, []);
+
+  if (loading) return null;
+
+  // Database is ready - no banner needed
+  if (setupStatus?.status === 'ready') return null;
+
+  // Not configured at all
+  if (setupStatus?.status === 'not_configured' || setupStatus?.status === 'error') return null;
+
+  // Needs migration
+  const handleCopySql = async () => {
+    if (setupStatus?.migrationSql) {
+      await navigator.clipboard.writeText(setupStatus.migrationSql);
+      setCopied(true);
+      toast.success('SQL kopioitu leikepöydälle!', {
+        description: 'Liitä se Supabasen SQL Editoriin',
+      });
+      setTimeout(() => setCopied(false), 3000);
+    }
+  };
+
+  const handleOpenDashboard = () => {
+    if (setupStatus?.dashboardUrl) {
+      window.open(setupStatus.dashboardUrl, '_blank');
+    }
+  };
+
+  return (
+    <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 shrink-0">
+            <Database className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm">Tietokanta ei ole vielä valmis</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Supabase on yhdistetty, mutta tietokantataulut puuttuvat. Suorita migraatio SQL Editorissa.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs h-9 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+            onClick={handleCopySql}
+          >
+            {copied ? (
+              <>
+                <CheckCircle2 className="size-3.5 mr-1.5 text-emerald-500" />
+                Kopioitu!
+              </>
+            ) : (
+              <>
+                <Copy className="size-3.5 mr-1.5" />
+                Kopioi SQL
+              </>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            className="flex-1 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={handleOpenDashboard}
+          >
+            <ExternalLink className="size-3.5 mr-1.5" />
+            Avaa SQL Editor
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-9"
+            onClick={checkSetup}
+            disabled={checking}
+          >
+            {checking ? <Loader2 className="size-3.5 animate-spin" /> : 'Tarkista uudelleen'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function HomeView() {
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
   const navigateToCourses = useAppStore((s) => s.navigateToCourses);
-  const navigateToProfile = useAppStore((s) => s.navigateToProfile);
   const navigateToAuth = useAppStore((s) => s.navigateToAuth);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
   const navigateToGameHistory = useAppStore((s) => s.navigateToGameHistory);
@@ -37,7 +155,7 @@ export function HomeView() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Hero Section */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-6 sm:p-10 text-white">
         <div className="relative z-10 space-y-5">
@@ -78,6 +196,9 @@ export function HomeView() {
           </form>
         </div>
       </section>
+
+      {/* Database Setup Banner */}
+      <DatabaseSetupBanner />
 
       {/* Quick Actions */}
       <section className="grid gap-4 sm:grid-cols-3">

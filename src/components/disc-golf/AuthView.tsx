@@ -194,7 +194,7 @@ function SupabaseSetupGuide() {
                   NEXT_PUBLIC_SUPABASE_URL=<span className="text-muted-foreground">https://xxx.supabase.co</span>
                 </p>
                 <p className="text-emerald-600 dark:text-emerald-400">
-                  NEXT_PUBLIC_SUPABASE_ANON_KEY=<span className="text-muted-foreground">eyJ...</span>
+                  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<span className="text-muted-foreground">eyJ...</span>
                 </p>
               </div>
             </div>
