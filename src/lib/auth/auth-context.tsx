@@ -97,13 +97,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string, username: string, displayName?: string) => {
     if (!supabase) return { error: 'Supabase not configured' };
 
-    const checkRes = await fetch(`/api/auth/check-username?username=${encodeURIComponent(username)}`);
-    if (checkRes.ok) {
-      const { available } = await checkRes.json();
-      if (!available) return { error: 'Käyttäjänimi on jo varattu' };
+    // Check username availability server-side
+    try {
+      const checkRes = await fetch(`/api/auth/check-username?username=${encodeURIComponent(username)}`);
+      if (checkRes.ok) {
+        const { available } = await checkRes.json();
+        if (!available) return { error: 'Käyttäjänimi on jo varattu' };
+      }
+    } catch {
+      // Continue even if check fails - we'll catch conflicts later
     }
 
-    const { error } = await supabase.auth.signUp({
+    // Create the auth user
+    const { data: signUpData, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -116,15 +122,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (error) return { error: error.message };
 
-    const profileRes = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, displayName: displayName || username }),
-    });
+    // After signUp, the trigger may have created a profile with a wrong username (derived from email).
+    // Update it with the correct username using the client-side session.
+    if (signUpData?.user) {
+      // Small delay to ensure the trigger has completed
+      await new Promise((r) => setTimeout(r, 500));
 
-    if (!profileRes.ok) {
-      const data = await profileRes.json();
-      return { error: data.error || 'Profiilin luonti epäonnistui' };
+      // Update the profile with the correct username
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          username,
+          display_name: displayName || username,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', signUpData.user.id);
+
+      if (profileError) {
+        // If update fails (e.g. trigger didn't create profile yet), try upsert via server
+        console.error('Failed to update profile client-side:', profileError);
+        try {
+          const profileRes = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, displayName: displayName || username }),
+          });
+          if (!profileRes.ok) {
+            const data = await profileRes.json();
+            console.error('Server profile creation also failed:', data.error);
+            // Don't return error - the user is still created, profile can be fixed later
+          }
+        } catch {
+          console.error('Failed to call register endpoint');
+        }
+      }
+
+      // Refresh the profile in state to get the correct username
+      const profile = await fetchProfile();
+      if (profile) {
+        setState(prev => ({ ...prev, user: profile, isAuthenticated: true }));
+      }
     }
 
     return { error: null };

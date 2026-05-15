@@ -22,7 +22,7 @@ BEGIN
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (
     NEW.id,
-    LOWER(SUBSTRING(NEW.email FROM '^[^@]+')),
+    COALESCE(NEW.raw_user_meta_data->>'username', LOWER(SUBSTRING(NEW.email FROM '^[^@]+'))),
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
