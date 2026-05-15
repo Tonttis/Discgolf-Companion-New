@@ -28,6 +28,7 @@ import {
   AtSign,
   ChevronRight,
   Clock,
+  Server,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
@@ -209,6 +210,8 @@ export function HomeView() {
     }
   };
 
+  const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState(false);
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!registerEmail.trim() || !registerPassword || !username.trim()) {
@@ -224,10 +227,14 @@ export function HomeView() {
       return;
     }
     setAuthLoading2(true);
+    setEmailConfirmationNeeded(false);
     try {
-      const { error } = await signUp(registerEmail.trim(), registerPassword, username.trim(), displayName.trim() || undefined);
+      const { error, needsEmailConfirmation } = await signUp(registerEmail.trim(), registerPassword, username.trim(), displayName.trim() || undefined);
       if (error) {
         toast.error('Rekisteröinti epäonnistui', { description: error });
+      } else if (needsEmailConfirmation) {
+        setEmailConfirmationNeeded(true);
+        toast.success('Tili luotu!', { description: 'Vahvista sähköpostiosoitteesi kirjautuaksesi sisään. Tarkista sähköpostisi.' });
       } else {
         toast.success('Rekisteröinti onnistui!', { description: 'Tervetuloa DiscGolf Companion -käyttäjäksi!' });
         setShowAuth(false);
@@ -249,21 +256,21 @@ export function HomeView() {
     : '';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-6 sm:p-10 text-white">
-        <div className="relative z-10 space-y-5">
+      <section className="relative overflow-hidden rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-4 sm:p-10 text-white">
+        <div className="relative z-10 space-y-4 sm:space-y-5">
           <div className="flex items-center gap-3">
             <img
               src="/disc-golf-logo.png"
               alt="DiscGolf Companion"
-              className="size-14 rounded-xl"
+              className="size-10 sm:size-14 rounded-lg sm:rounded-xl"
             />
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+              <h1 className="text-xl sm:text-3xl font-bold tracking-tight">
                 DiscGolf Companion
               </h1>
-              <p className="text-emerald-100 text-sm sm:text-base">
+              <p className="text-emerald-100 text-xs sm:text-base">
                 Suomalaiset frisbeegolfradat, tulospalvelu ja paljon muuta
               </p>
             </div>
@@ -278,12 +285,12 @@ export function HomeView() {
                 placeholder="Etsi ratoja tai kaupunkeja..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-9 h-11 bg-white/15 border-white/20 text-white placeholder:text-white/60 focus-visible:border-white/50 focus-visible:ring-white/20 backdrop-blur-sm"
+                className="pl-9 h-10 sm:h-11 bg-white/15 border-white/20 text-white placeholder:text-white/60 focus-visible:border-white/50 focus-visible:ring-white/20 backdrop-blur-sm text-sm sm:text-base"
               />
             </div>
             <Button
               type="submit"
-              className="h-11 bg-white text-emerald-700 hover:bg-white/90 font-semibold"
+              className="h-10 sm:h-11 bg-white text-emerald-700 hover:bg-white/90 font-semibold text-sm"
             >
               Hae
             </Button>
@@ -563,6 +570,22 @@ export function HomeView() {
                         autoComplete="name"
                       />
                     </div>
+                    {emailConfirmationNeeded && (
+                      <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-center space-y-1">
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Vahvista sähköpostiosoite</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          Olemme lähettäneet vahvistuslinkin osoitteeseen <strong>{registerEmail.trim()}</strong>. 
+                          Tarkista sähköpostisi ja vahvista tili kirjautuaksesi sisään.
+                        </p>
+                        <button
+                          type="button"
+                          className="text-xs text-emerald-600 dark:text-emerald-400 font-medium hover:underline mt-1"
+                          onClick={() => setAuthMode('login')}
+                        >
+                          Kirjaudu sisään vahvistuksen jälkeen →
+                        </button>
+                      </div>
+                    )}
                     <Button
                       type="submit"
                       className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
@@ -596,7 +619,7 @@ export function HomeView() {
       </section>
 
       {/* Quick Actions */}
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
         <Card
           className="cursor-pointer hover:border-emerald-500/50 hover:shadow-md transition-all duration-200"
           onClick={() => {
@@ -659,13 +682,13 @@ export function HomeView() {
       </section>
 
       {/* How It Works */}
-      <section className="rounded-xl border bg-card p-6 space-y-4">
-        <h2 className="font-semibold text-lg">Tietoa palvelusta</h2>
+      <section className="rounded-xl border bg-card p-4 sm:p-6 space-y-4">
+        <h2 className="font-semibold text-base sm:text-lg">Tietoa palvelusta</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
           Selaa yli 1000 suomalaista frisbeegolfrataa yhteisön arvosanoilla, luokituksilla
           ja yksityiskohtaisilla tiedoilla. Kirjaa pelit ja seuraa edistymistäsi.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
               <Star className="size-4" />
@@ -710,6 +733,49 @@ export function HomeView() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Hosting Guides */}
+      <section className="rounded-xl border bg-card p-4 sm:p-6 space-y-3">
+        <h2 className="font-semibold text-base sm:text-lg flex items-center gap-2">
+          <Server className="size-5 text-emerald-600 dark:text-emerald-400" />
+          Asennusohjeet
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Asenna DiscGolf Companion omalle palvelimelle tai tietokoneelle.
+        </p>
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+          <a
+            href="/api/hosting-guide?platform=windows"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center justify-center size-9 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 shrink-0">
+              <Server className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Windows</p>
+              <p className="text-xs text-muted-foreground">Bun/Node.js + NSSM</p>
+            </div>
+            <ExternalLink className="size-3.5 text-muted-foreground shrink-0 ml-auto" />
+          </a>
+          <a
+            href="/api/hosting-guide?platform=linux"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 shrink-0">
+              <Server className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Linux</p>
+              <p className="text-xs text-muted-foreground">systemd + Nginx + SSL</p>
+            </div>
+            <ExternalLink className="size-3.5 text-muted-foreground shrink-0 ml-auto" />
+          </a>
         </div>
       </section>
     </div>

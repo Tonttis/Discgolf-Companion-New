@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Home, MapPin, ArrowLeft, User, Gamepad2, Heart } from 'lucide-react';
+import { Home, MapPin, ArrowLeft, User, Heart } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
 import { HomeView } from './HomeView';
@@ -66,7 +66,8 @@ export function AppShell() {
   const getActiveTab = (): string => {
     if (currentView === 'home') return 'home';
     if (['courses', 'course-detail'].includes(currentView)) return 'courses';
-    if (['profile', 'auth', 'game-history', 'game-detail', 'favorites'].includes(currentView)) return 'profile';
+    if (['favorites'].includes(currentView)) return 'favorites';
+    if (['profile', 'auth', 'game-history', 'game-detail'].includes(currentView)) return 'profile';
     if (['new-game', 'active-game', 'game-summary'].includes(currentView)) return 'home';
     return 'home';
   };
@@ -74,13 +75,13 @@ export function AppShell() {
   const activeTab = getActiveTab();
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-dvh flex flex-col bg-background">
       {/* Top Header */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm border-b">
-        <div className="flex items-center justify-between h-14 px-4">
+        <div className="flex items-center justify-between h-12 sm:h-14 px-3 sm:px-4">
           <div className="flex items-center gap-2">
             {canGoBack && (
-              <Button variant="ghost" size="icon" onClick={goBack} className="shrink-0">
+              <Button variant="ghost" size="icon" onClick={goBack} className="shrink-0 size-9">
                 <ArrowLeft className="size-5" />
               </Button>
             )}
@@ -88,8 +89,8 @@ export function AppShell() {
               onClick={navigateHome}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
-              <div className="flex items-center justify-center size-8 rounded-lg overflow-hidden">
-                <img src="/disc-golf-logo.png" alt="" className="size-8 rounded-lg object-cover" />
+              <div className="flex items-center justify-center size-7 sm:size-8 rounded-lg overflow-hidden">
+                <img src="/disc-golf-logo.png" alt="" className="size-7 sm:size-8 rounded-lg object-cover" />
               </div>
               <span className="font-semibold text-sm sm:text-base">
                 DiscGolf Companion
@@ -100,14 +101,14 @@ export function AppShell() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-6 pb-24 sm:pb-6">
+      <main className="flex-1 w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-20 sm:pb-6">
         <ViewTransition viewKey={currentView}>{renderView()}</ViewTransition>
       </main>
 
       {/* Bottom Navigation (Mobile) */}
       {!hideBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t sm:hidden safe-area-bottom">
-          <div className="flex items-center justify-around h-16">
+          <div className="flex items-center justify-around h-14">
             <button
               onClick={navigateHome}
               className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${

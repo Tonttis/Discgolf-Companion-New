@@ -1,12 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { UserProfile, AuthState } from '@/lib/types';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, username: string, displayName?: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, username: string, displayName?: string) => Promise<{ error: string | null; needsEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: { displayName?: string; avatarUrl?: string }) => Promise<{ error: string | null }>;
@@ -36,7 +36,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabaseConfigured: false,
   });
 
-  const supabase = createSupabaseBrowserClient();
+  // Create a stable Supabase client reference
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  // Use a ref to track if we've already initialized
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -46,6 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return;
     }
+
+    // Prevent double initialization in strict mode
+    if (initializedRef.current) return;
+    initializedRef.current = true;
 
     const initAuth = async () => {
       try {
@@ -68,8 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initAuth();
 
+    // Set up auth state change listener - this persists across the lifetime of the component
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
+        // Small delay to allow profile trigger to complete
+        await new Promise((r) => setTimeout(r, 300));
         const profile = await fetchProfile();
         setState({
           user: profile,
@@ -79,11 +90,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } else if (event === 'SIGNED_OUT') {
         setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // On token refresh, just update the profile quietly
+        const profile = await fetchProfile();
+        if (profile) {
+          setState(prev => ({ ...prev, user: profile }));
+        }
       }
     });
 
     return () => {
       subscription.unsubscribe();
+      initializedRef.current = false;
     };
   }, [supabase]);
 
@@ -91,6 +109,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) return { error: 'Supabase not configured' };
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+
+    // Manually refresh profile after sign in (in case onAuthStateChange is slow)
+    const profile = await fetchProfile();
+    if (profile) {
+      setState({ user: profile, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
+    }
+
     return { error: null };
   }, [supabase]);
 
@@ -122,9 +147,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (error) return { error: error.message };
 
-    // After signUp, the trigger may have created a profile with a wrong username (derived from email).
-    // Update it with the correct username using the client-side session.
-    if (signUpData?.user) {
+    // Check if email confirmation is required (session is null but user exists)
+    const needsEmailConfirmation = !signUpData.session && signUpData.user;
+
+    if (needsEmailConfirmation) {
+      // User was created but needs to confirm email before they can sign in
+      // The trigger should have created a profile already
+      return { error: null, needsEmailConfirmation: true };
+    }
+
+    // If we got a session back, the user is automatically signed in
+    if (signUpData?.user && signUpData.session) {
       // Small delay to ensure the trigger has completed
       await new Promise((r) => setTimeout(r, 500));
 
@@ -150,21 +183,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!profileRes.ok) {
             const data = await profileRes.json();
             console.error('Server profile creation also failed:', data.error);
-            // Don't return error - the user is still created, profile can be fixed later
           }
         } catch {
           console.error('Failed to call register endpoint');
         }
       }
 
-      // Refresh the profile in state to get the correct username
+      // Refresh the profile in state
       const profile = await fetchProfile();
       if (profile) {
-        setState(prev => ({ ...prev, user: profile, isAuthenticated: true }));
+        setState({ user: profile, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
       }
     }
 
-    return { error: null };
+    return { error: null, needsEmailConfirmation: false };
   }, [supabase]);
 
   const signOut = useCallback(async () => {

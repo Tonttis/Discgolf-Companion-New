@@ -310,19 +310,24 @@ export function NewGameView() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="size-4 text-emerald-600 dark:text-emerald-400" />
-            Lisää pelaajia
+            Pelaajat
           </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Voit pelata yksin tai lisätä muita pelaajia käyttäjänimellä
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Etsi käyttäjänimellä..."
-              value={inputValue}
-              onChange={(e) => handleInputChange(e.target.value)}
-              className="pl-9 pr-9"
-            />
+          {/* Search Input - for adding other players */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Lisää muita pelaajia (valinnainen)</p>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                placeholder="Hae @käyttäjänimellä..."
+                value={inputValue}
+                onChange={(e) => handleInputChange(e.target.value)}
+                className="pl-9 pr-9"
+              />
             {inputValue && (
               <button
                 onClick={() => {
@@ -414,15 +419,22 @@ export function NewGameView() {
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
 
           <Separator />
 
-          {/* Added Players List */}
+          {/* Players List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-muted-foreground">
                 Pelaajat ({allPlayers.length})
               </p>
+              {allPlayers.length === 1 && (
+                <span className="text-xs text-muted-foreground italic">Yksinpeli</span>
+              )}
+              {allPlayers.length > 1 && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{allPlayers.length} pelaajaa</span>
+              )}
             </div>
 
             <AnimatePresence mode="popLayout">

@@ -246,6 +246,7 @@ export function AuthView() {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,8 +304,9 @@ export function AuthView() {
     }
 
     setRegisterLoading(true);
+    setEmailConfirmationNeeded(false);
     try {
-      const { error } = await signUp(
+      const { error, needsEmailConfirmation } = await signUp(
         registerEmail.trim(),
         registerPassword,
         username.trim(),
@@ -313,6 +315,11 @@ export function AuthView() {
       if (error) {
         toast.error('Rekisteröinti epäonnistui', {
           description: error,
+        });
+      } else if (needsEmailConfirmation) {
+        setEmailConfirmationNeeded(true);
+        toast.success('Tili luotu!', {
+          description: 'Vahvista sähköpostiosoitteesi kirjautuaksesi sisään. Tarkista sähköpostisi.',
         });
       } else {
         toast.success('Rekisteröinti onnistui!', {
@@ -545,6 +552,15 @@ export function AuthView() {
                   </p>
                 </div>
 
+                {emailConfirmationNeeded && (
+                  <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1.5">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Vahvista sähköpostiosoite</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Olemme lähettäneet vahvistuslinkin osoitteeseen <strong>{registerEmail.trim()}</strong>. 
+                      Tarkista sähköpostisi ja vahvista tili kirjautuaksesi sisään.
+                    </p>
+                  </div>
+                )}
                 <Button
                   type="submit"
                   className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
