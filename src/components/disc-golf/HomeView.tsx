@@ -41,6 +41,7 @@ interface SetupStatus {
   message: string;
   dashboardUrl?: string;
   migrationSql?: string;
+  fixSql?: string;
 }
 
 function DatabaseSetupBanner() {
@@ -48,6 +49,7 @@ function DatabaseSetupBanner() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [showFix, setShowFix] = useState(false);
 
   const checkSetup = async () => {
     setChecking(true);
@@ -76,9 +78,10 @@ function DatabaseSetupBanner() {
   if (setupStatus?.status === 'not_configured' || setupStatus?.status === 'error') return null;
 
   // Needs migration
-  const handleCopySql = async () => {
-    if (setupStatus?.migrationSql) {
-      await navigator.clipboard.writeText(setupStatus.migrationSql);
+  const handleCopySql = async (sql?: string) => {
+    const text = sql || setupStatus?.migrationSql;
+    if (text) {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       toast.success('SQL kopioitu leikepöydälle!', {
         description: 'Liitä se Supabasen SQL Editoriin',
@@ -113,7 +116,7 @@ function DatabaseSetupBanner() {
             variant="outline"
             size="sm"
             className="flex-1 text-xs h-9 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-            onClick={handleCopySql}
+            onClick={() => handleCopySql()}
           >
             {copied ? (
               <>
@@ -202,6 +205,9 @@ export function HomeView() {
       } else {
         toast.success('Kirjautuminen onnistui!', { description: 'Tervetuloa takaisin!' });
         setShowAuth(false);
+        // Clear form
+        setLoginEmail('');
+        setLoginPassword('');
       }
     } catch {
       toast.error('Jotain meni pieleen');
@@ -238,6 +244,11 @@ export function HomeView() {
       } else {
         toast.success('Rekisteröinti onnistui!', { description: 'Tervetuloa DiscGolf Companion -käyttäjäksi!' });
         setShowAuth(false);
+        // Clear form
+        setRegisterEmail('');
+        setRegisterPassword('');
+        setUsername('');
+        setDisplayName('');
       }
     } catch {
       toast.error('Jotain meni pieleen');
@@ -309,27 +320,29 @@ export function HomeView() {
               <Loader2 className="size-6 animate-spin text-emerald-600" />
             </div>
           </Card>
-        ) : isAuthenticated && user ? (
-          /* Authenticated Profile Card */
+        ) : isAuthenticated ? (
+          /* Authenticated Profile Card - shows whenever isAuthenticated is true */
           <Card className="overflow-hidden">
             <CardContent className="p-4">
               <div className="flex items-center gap-4">
                 <Avatar className="size-12 border-2 border-emerald-200 dark:border-emerald-800">
-                  {user.avatarUrl ? (
-                    <AvatarImage src={user.avatarUrl} alt={user.displayName || user.username} />
+                  {user?.avatarUrl ? (
+                    <AvatarImage src={user.avatarUrl} alt={user?.displayName || user?.username || ''} />
                   ) : null}
                   <AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold">
-                    {userInitials}
+                    {userInitials || '?'}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-base truncate">
-                    {user.displayName || user.username}
+                    {user?.displayName || user?.username || 'Käyttäjä'}
                   </h3>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <AtSign className="size-3" />
-                    <span>{user.username}</span>
-                  </div>
+                  {user?.username && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <AtSign className="size-3" />
+                      <span>{user.username}</span>
+                    </div>
+                  )}
                 </div>
                 <Button
                   variant="ghost"

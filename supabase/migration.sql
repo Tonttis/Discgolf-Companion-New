@@ -14,20 +14,51 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Auto-create profile on signup
+-- Auto-create profile on signup (with robust username generation)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  clean_username TEXT;
+  final_username TEXT;
+  counter INT := 0;
 BEGIN
+  -- Extract the part before @ from email
+  base_username := LOWER(SPLIT_PART(NEW.email, '@', 1));
+
+  -- Remove any character that isn't a-z, 0-9, or underscore
+  clean_username := REGEXP_REPLACE(base_username, '[^a-z0-9_]', '', 'g');
+
+  -- If the cleaned username is too short, use 'user' as base
+  IF LENGTH(clean_username) < 3 THEN
+    clean_username := 'user';
+  END IF;
+
+  -- Truncate to 20 chars
+  clean_username := SUBSTRING(clean_username FROM 1 FOR 20);
+
+  -- Check if username is taken, append number if needed
+  final_username := clean_username;
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
+    counter := counter + 1;
+    final_username := SUBSTRING(clean_username FROM 1 FOR (20 - LENGTH(counter::TEXT))) || counter::TEXT;
+    IF counter > 999 THEN
+      final_username := SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 20);
+      EXIT;
+    END IF;
+  END LOOP;
+
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (
     NEW.id,
-    LOWER(SUBSTRING(NEW.email FROM '^[^@]+')),
+    final_username,
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -79,9 +110,10 @@ CREATE TABLE IF NOT EXISTS scores (
 -- Row Level Security (RLS)
 -- ============================================
 
--- Profiles: anyone can read, users can update their own
+-- Profiles: anyone can read, users can insert/update their own
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Profiles are viewable by everyone" ON profiles FOR SELECT USING (true);
+CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 
 -- Favorites: users can read/write their own

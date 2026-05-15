@@ -28,6 +28,18 @@ async function fetchProfile(): Promise<UserProfile | null> {
   return null;
 }
 
+// Create a fallback profile from Supabase auth user metadata
+function createFallbackProfile(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }): UserProfile {
+  return {
+    id: authUser.id,
+    username: (authUser.user_metadata?.username as string) || authUser.email?.split('@')[0] || 'user',
+    displayName: (authUser.user_metadata?.display_name as string) || null,
+    avatarUrl: (authUser.user_metadata?.avatar_url as string) || null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -39,8 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Create a stable Supabase client reference
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  // Use a ref to track if we've already initialized
-  const initializedRef = useRef(false);
+  // Track the subscription so we can clean it up
+  const subscriptionRef = useRef<ReturnType<typeof supabase extends null ? never : NonNullable<unknown>> | null>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -51,15 +63,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Prevent double initialization in strict mode
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    let cancelled = false;
 
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        if (cancelled) return;
+
         if (session?.user) {
           const profile = await fetchProfile();
+          if (cancelled) return;
+
+          if (profile) {
+            setState({
+              user: profile,
+              isAuthenticated: true,
+              isLoading: false,
+              supabaseConfigured: true,
+            });
+          } else {
+            // Profile doesn't exist yet — use fallback from auth metadata
+            // and try to create the profile on the server
+            const fallback = createFallbackProfile(session.user);
+            setState({
+              user: fallback,
+              isAuthenticated: true,
+              isLoading: false,
+              supabaseConfigured: true,
+            });
+
+            // Try to create the profile on the server
+            try {
+              await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  username: fallback.username,
+                  displayName: fallback.displayName || fallback.username,
+                }),
+              });
+              // Re-fetch the profile after creation
+              const newProfile = await fetchProfile();
+              if (newProfile && !cancelled) {
+                setState(prev => ({ ...prev, user: newProfile }));
+              }
+            } catch {
+              // Profile creation failed — fallback profile is still usable
+            }
+          }
+        } else {
+          setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
+        }
+      } catch {
+        if (!cancelled) {
+          setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
+        }
+      }
+    };
+
+    initAuth();
+
+    // Set up auth state change listener — this persists across the lifetime of the component
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (cancelled) return;
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Small delay to allow profile trigger to complete
+        await new Promise((r) => setTimeout(r, 500));
+        if (cancelled) return;
+
+        const profile = await fetchProfile();
+        if (cancelled) return;
+
+        if (profile) {
           setState({
             user: profile,
             isAuthenticated: true,
@@ -67,56 +143,96 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             supabaseConfigured: true,
           });
         } else {
-          setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
+          // Profile doesn't exist — use fallback
+          const fallback = createFallbackProfile(session.user);
+          setState({
+            user: fallback,
+            isAuthenticated: true,
+            isLoading: false,
+            supabaseConfigured: true,
+          });
+
+          // Try to create profile
+          try {
+            await fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: fallback.username,
+                displayName: fallback.displayName || fallback.username,
+              }),
+            });
+            const newProfile = await fetchProfile();
+            if (newProfile && !cancelled) {
+              setState(prev => ({ ...prev, user: newProfile }));
+            }
+          } catch {
+            // Fallback profile is still usable
+          }
         }
-      } catch {
-        setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
-      }
-    };
-
-    initAuth();
-
-    // Set up auth state change listener - this persists across the lifetime of the component
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Small delay to allow profile trigger to complete
-        await new Promise((r) => setTimeout(r, 300));
-        const profile = await fetchProfile();
-        setState({
-          user: profile,
-          isAuthenticated: true,
-          isLoading: false,
-          supabaseConfigured: true,
-        });
       } else if (event === 'SIGNED_OUT') {
         setState({ user: null, isAuthenticated: false, isLoading: false, supabaseConfigured: true });
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        // On token refresh, just update the profile quietly
         const profile = await fetchProfile();
-        if (profile) {
+        if (profile && !cancelled) {
           setState(prev => ({ ...prev, user: profile }));
         }
       }
     });
 
+    subscriptionRef.current = subscription;
+
     return () => {
+      cancelled = true;
       subscription.unsubscribe();
-      initializedRef.current = false;
     };
   }, [supabase]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase not configured' };
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
 
-    // Manually refresh profile after sign in (in case onAuthStateChange is slow)
-    const profile = await fetchProfile();
-    if (profile) {
-      setState({ user: profile, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error: error.message };
+
+      // IMPORTANT: Always update state after successful sign-in
+      // Even if profile fetch fails, we use the auth data as fallback
+      if (data.user) {
+        // Small delay for cookies to propagate
+        await new Promise(r => setTimeout(r, 300));
+
+        const profile = await fetchProfile();
+
+        if (profile) {
+          setState({ user: profile, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
+        } else {
+          // Profile doesn't exist — use fallback and try to create it
+          const fallback = createFallbackProfile(data.user);
+          setState({ user: fallback, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
+
+          try {
+            await fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: fallback.username,
+                displayName: fallback.displayName || fallback.username,
+              }),
+            });
+            const newProfile = await fetchProfile();
+            if (newProfile) {
+              setState(prev => ({ ...prev, user: newProfile }));
+            }
+          } catch {
+            // Fallback is still usable
+          }
+        }
+      }
+
+      return { error: null };
+    } catch {
+      return { error: 'Kirjautuminen epäonnistui' };
     }
-
-    return { error: null };
   }, [supabase]);
 
   const signUp = useCallback(async (email: string, password: string, username: string, displayName?: string) => {
@@ -130,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!available) return { error: 'Käyttäjänimi on jo varattu' };
       }
     } catch {
-      // Continue even if check fails - we'll catch conflicts later
+      // Continue even if check fails
     }
 
     // Create the auth user
@@ -151,48 +267,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const needsEmailConfirmation = !signUpData.session && signUpData.user;
 
     if (needsEmailConfirmation) {
-      // User was created but needs to confirm email before they can sign in
-      // The trigger should have created a profile already
       return { error: null, needsEmailConfirmation: true };
     }
 
     // If we got a session back, the user is automatically signed in
     if (signUpData?.user && signUpData.session) {
-      // Small delay to ensure the trigger has completed
-      await new Promise((r) => setTimeout(r, 500));
+      // Wait for the trigger to create the profile
+      await new Promise((r) => setTimeout(r, 1000));
 
-      // Update the profile with the correct username
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          username,
-          display_name: displayName || username,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', signUpData.user.id);
-
-      if (profileError) {
-        // If update fails (e.g. trigger didn't create profile yet), try upsert via server
-        console.error('Failed to update profile client-side:', profileError);
-        try {
-          const profileRes = await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, displayName: displayName || username }),
-          });
-          if (!profileRes.ok) {
-            const data = await profileRes.json();
-            console.error('Server profile creation also failed:', data.error);
-          }
-        } catch {
-          console.error('Failed to call register endpoint');
-        }
+      // Try to create/update the profile via the server endpoint
+      try {
+        await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, displayName: displayName || username }),
+        });
+      } catch {
+        // Continue even if server profile creation fails
       }
 
-      // Refresh the profile in state
+      // Wait a bit more then fetch the profile
+      await new Promise(r => setTimeout(r, 500));
+
       const profile = await fetchProfile();
       if (profile) {
         setState({ user: profile, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
+      } else {
+        // Use fallback profile
+        const fallback = createFallbackProfile(signUpData.user);
+        setState({ user: fallback, isAuthenticated: true, isLoading: false, supabaseConfigured: true });
       }
     }
 

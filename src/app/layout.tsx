@@ -14,22 +14,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DiscGolf Companion - Courses & Competition Scorecards",
-  description: "Find disc golf courses, explore competition results, and track scores with detailed hole-by-hole scorecards. Powered by DiscGolfMetrix.",
-  keywords: ["disc golf", "discgolf", "courses", "scorecards", "competitions", "DiscGolfMetrix", "frisbee golf"],
+  title: "DiscGolf Companion - Frisbeegolfradat & Tulospalvelu",
+  description: "Selaa suomalaisia frisbeegolfratoja, kirjaa pelejä ja seuraa edistymistäsi. Yli 1000 rataa yksityiskohtaisilla tiedoilla.",
+  keywords: ["disc golf", "discgolf", "frisbeegolf", "radat", "tulospalvelu", "scorecards", "suomi", "finland"],
   authors: [{ name: "DiscGolf Companion" }],
   icons: {
     icon: "/disc-golf-logo.png",
   },
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: "cover",
+  },
   openGraph: {
     title: "DiscGolf Companion",
-    description: "Find courses, track scores, explore competitions",
+    description: "Selaa suomalaisia frisbeegolfratoja, kirjaa pelejä ja seuraa edistymistäsi",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "DiscGolf Companion",
-    description: "Find courses, track scores, explore competitions",
+    description: "Selaa suomalaisia frisbeegolfratoja, kirjaa pelejä ja seuraa edistymistäsi",
   },
 };
 

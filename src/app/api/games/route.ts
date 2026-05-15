@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // GET /api/games - List games for the current user
 export async function GET(request: NextRequest) {
@@ -110,6 +110,55 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Helper: Ensure a user's profile exists in the profiles table
+async function ensureProfile(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, userId: string, userEmail?: string, userMetadata?: Record<string, unknown>) {
+  // Check if profile exists
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (existing) return true;
+
+  // Profile doesn't exist — try to create it
+  const username = (userMetadata?.username as string) || userEmail?.split('@')[0]?.replace(/[^a-z0-9_]/gi, '').toLowerCase() || `user_${userId.slice(0, 8)}`;
+  const displayName = (userMetadata?.display_name as string) || username;
+
+  // Try with admin client first (bypasses RLS)
+  const adminClient = await createSupabaseAdminClient();
+  if (adminClient) {
+    const { error } = await adminClient
+      .from('profiles')
+      .upsert({
+        id: userId,
+        username,
+        display_name: displayName,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+
+    if (!error) return true;
+    console.error('Admin profile upsert failed:', error);
+  }
+
+  // Fallback: try with regular client (requires INSERT policy)
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({
+      id: userId,
+      username,
+      display_name: displayName,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Profile upsert failed:', error);
+    return false;
+  }
+
+  return true;
+}
+
 // POST /api/games - Create a new game
 export async function POST(request: NextRequest) {
   try {
@@ -127,7 +176,14 @@ export async function POST(request: NextRequest) {
     const { courseSlug, courseName, totalHoles, totalPar, playerUsernames } = body;
 
     if (!courseSlug || !courseName || !totalHoles) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing required fields: courseSlug, courseName, totalHoles' }, { status: 400 });
+    }
+
+    // Ensure the creator's profile exists before creating the game
+    // (the games.created_by FK references profiles.id)
+    const profileOk = await ensureProfile(supabase, user.id, user.email, user.user_metadata as Record<string, unknown> | undefined);
+    if (!profileOk) {
+      return NextResponse.json({ error: 'Profiilin luonti epäonnistui. Suorita tietokantakorjaus SQL Editorissa.' }, { status: 500 });
     }
 
     // Create the game
@@ -145,6 +201,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (gameError || !game) {
+      console.error('Game creation error:', gameError);
       return NextResponse.json({ error: gameError?.message || 'Failed to create game' }, { status: 500 });
     }
 
@@ -158,12 +215,16 @@ export async function POST(request: NextRequest) {
 
     if (creatorPlayerError) {
       console.error('Failed to add creator as player:', creatorPlayerError);
+      // Don't fail the whole operation — the game was created
     }
 
     // Add other players by username
     const otherUsernames = (playerUsernames ?? []).filter((u: string) => u.length > 0);
     if (otherUsernames.length > 0) {
-      const { data: otherUsers } = await supabase
+      const adminClient = await createSupabaseAdminClient();
+      const clientToUse = adminClient || supabase;
+
+      const { data: otherUsers } = await clientToUse
         .from('profiles')
         .select('id, username')
         .in('username', otherUsernames);

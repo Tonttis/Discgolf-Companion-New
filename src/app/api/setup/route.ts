@@ -1,7 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// The fix SQL for existing installations that are missing the INSERT policy and have a broken trigger
+const FIX_SQL = `-- Fix: Add missing INSERT policy on profiles and update trigger
+-- Run this in your Supabase SQL Editor if registration doesn't work
+
+-- 1. Add the missing INSERT policy so users can create their own profiles
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 2. Update the trigger function to handle special characters in emails
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  clean_username TEXT;
+  final_username TEXT;
+  counter INT := 0;
+BEGIN
+  -- Extract the part before @ from email
+  base_username := LOWER(SPLIT_PART(NEW.email, '@', 1));
+
+  -- Remove any character that isn't a-z, 0-9, or underscore
+  clean_username := REGEXP_REPLACE(base_username, '[^a-z0-9_]', '', 'g');
+
+  -- If the cleaned username is too short, use 'user' as base
+  IF LENGTH(clean_username) < 3 THEN
+    clean_username := 'user';
+  END IF;
+
+  -- Truncate to 20 chars
+  clean_username := SUBSTRING(clean_username FROM 1 FOR 20);
+
+  -- Check if username is taken, append number if needed
+  final_username := clean_username;
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
+    counter := counter + 1;
+    final_username := SUBSTRING(clean_username FROM 1 FOR (20 - LENGTH(counter::TEXT))) || counter::TEXT;
+    IF counter > 999 THEN
+      final_username := SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 20);
+      EXIT;
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.profiles (id, username, display_name)
+  VALUES (
+    NEW.id,
+    final_username,
+    COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Recreate the trigger
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE OR REPLACE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+`;
+
 const MIGRATION_SQL = `-- ============================================
 -- DiscGolf Companion - Supabase Database Schema
+-- ============================================
 -- Run this SQL in your Supabase SQL Editor
 -- ============================================
 
@@ -15,14 +77,34 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Auto-create profile on signup
+-- Auto-create profile on signup (with robust username generation)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  clean_username TEXT;
+  final_username TEXT;
+  counter INT := 0;
 BEGIN
+  base_username := LOWER(SPLIT_PART(NEW.email, '@', 1));
+  clean_username := REGEXP_REPLACE(base_username, '[^a-z0-9_]', '', 'g');
+  IF LENGTH(clean_username) < 3 THEN
+    clean_username := 'user';
+  END IF;
+  clean_username := SUBSTRING(clean_username FROM 1 FOR 20);
+  final_username := clean_username;
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
+    counter := counter + 1;
+    final_username := SUBSTRING(clean_username FROM 1 FOR (20 - LENGTH(counter::TEXT))) || counter::TEXT;
+    IF counter > 999 THEN
+      final_username := SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 20);
+      EXIT;
+    END IF;
+  END LOOP;
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'username', LOWER(SUBSTRING(NEW.email FROM '^[^@]+'))),
+    final_username,
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
@@ -84,6 +166,10 @@ CREATE TABLE IF NOT EXISTS scores (
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Profiles are viewable by everyone" ON profiles FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -210,10 +296,14 @@ export async function GET() {
       });
     }
 
+    // Tables exist - check if the INSERT policy is missing (common issue)
+    // We try to detect this by checking if a profile can be inserted
+    // For now, just return ready but also provide the fix SQL
     return NextResponse.json({
       configured: true,
       status: 'ready',
       message: 'Database is set up and ready',
+      fixSql: FIX_SQL,
     });
   } catch (error) {
     return NextResponse.json({

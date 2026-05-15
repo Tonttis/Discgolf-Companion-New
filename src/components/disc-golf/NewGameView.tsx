@@ -26,6 +26,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { useAppStore } from '@/store/app-store';
 import { useCreateGame, useUserSearch, useCourseDetail } from '@/hooks/use-disc-golf';
 import { getClassificationLabel, getClassificationColor, getClassificationBg } from '@/lib/types';
+import { toast } from 'sonner';
 
 // ==========================================
 // Types
@@ -56,7 +57,7 @@ export function NewGameView() {
 
   const displayCourse = courseDetail ?? selectedCourse;
 
-  // Creator is always included as a player
+  // Creator is always included as a player (when logged in)
   const creatorPlayer: AddedPlayer | null = user
     ? {
         id: user.id,
@@ -66,6 +67,7 @@ export function NewGameView() {
       }
     : null;
 
+  // All players = creator + any added players (deduped)
   const allPlayers = creatorPlayer
     ? [creatorPlayer, ...addedPlayers.filter((p) => p.id !== creatorPlayer.id)]
     : addedPlayers;
@@ -127,11 +129,18 @@ export function NewGameView() {
   );
 
   const handleStartGame = useCallback(async () => {
-    if (!displayCourse || !user) return;
+    if (!displayCourse) {
+      toast.error('Ei valittua rataa');
+      return;
+    }
+    if (!user) {
+      toast.error('Kirjaudu sisään aloittaaksesi pelin');
+      return;
+    }
 
     setIsCreating(true);
     try {
-      const playerUsernames = allPlayers.map((p) => p.username);
+      const playerUsernames = addedPlayers.map((p) => p.username);
       const result = await createGame.mutateAsync({
         courseSlug: displayCourse.slug,
         courseName: displayCourse.name,
@@ -139,13 +148,15 @@ export function NewGameView() {
         totalPar,
         playerUsernames,
       });
+      toast.success('Peli luotu!');
       navigateToActiveGame(result.game);
-    } catch {
-      // Error is handled by the mutation
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Pelin luonti epäonnistui';
+      toast.error('Pelin luonti epäonnistui', { description: message });
     } finally {
       setIsCreating(false);
     }
-  }, [displayCourse, user, allPlayers, createGame, totalHoles, totalPar, navigateToActiveGame]);
+  }, [displayCourse, user, addedPlayers, createGame, totalHoles, totalPar, navigateToActiveGame]);
 
   // Not authenticated state
   if (!authLoading && !isAuthenticated) {
@@ -217,7 +228,7 @@ export function NewGameView() {
         <div>
           <h1 className="text-xl font-bold">Uusi peli</h1>
           <p className="text-sm text-muted-foreground">
-            Valitse radan tiedot ja lisää pelaajat
+            {allPlayers.length === 1 ? 'Yksinpeli' : `${allPlayers.length} pelaajaa`} · {displayCourse.name}
           </p>
         </div>
       </div>
@@ -429,7 +440,7 @@ export function NewGameView() {
               <p className="text-sm font-medium text-muted-foreground">
                 Pelaajat ({allPlayers.length})
               </p>
-              {allPlayers.length === 1 && (
+              {allPlayers.length === 1 && creatorPlayer && (
                 <span className="text-xs text-muted-foreground italic">Yksinpeli</span>
               )}
               {allPlayers.length > 1 && (
@@ -466,7 +477,7 @@ export function NewGameView() {
                         </p>
                         {isCreator && (
                           <Badge className="text-[10px] px-1.5 py-0 bg-emerald-600 text-white border-emerald-600 shrink-0">
-                            Luoja
+                            Sinä
                           </Badge>
                         )}
                       </div>
@@ -495,7 +506,7 @@ export function NewGameView() {
               <div className="flex flex-col items-center py-6 text-center">
                 <UserCircle className="size-10 text-muted-foreground/50 mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  Ei pelaajia vielä
+                  Kirjaudu sisään liittyäksesi peliin
                 </p>
               </div>
             )}
@@ -504,11 +515,11 @@ export function NewGameView() {
       </Card>
 
       {/* Sticky Start Game Button */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none">
+      <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none safe-area-bottom">
         <div className="max-w-lg mx-auto pointer-events-auto">
           <Button
             onClick={handleStartGame}
-            disabled={isCreating || !displayCourse || allPlayers.length === 0}
+            disabled={isCreating || !displayCourse || !user || allPlayers.length === 0}
             className="w-full h-12 text-base font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 disabled:opacity-50 disabled:shadow-none"
           >
             {isCreating ? (
@@ -519,7 +530,7 @@ export function NewGameView() {
             ) : (
               <>
                 <Play className="size-5 mr-2" />
-                Aloita peli
+                {allPlayers.length === 1 ? 'Aloita yksinpeli' : `Aloita peli (${allPlayers.length})`}
               </>
             )}
           </Button>
