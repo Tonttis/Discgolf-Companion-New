@@ -99,6 +99,7 @@ export type AppView =
   | 'course-detail'
   | 'auth'
   | 'profile'
+  | 'settings'
   | 'new-game'
   | 'active-game'
   | 'game-summary'

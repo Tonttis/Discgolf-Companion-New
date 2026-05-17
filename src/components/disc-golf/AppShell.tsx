@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Home, MapPin, ArrowLeft, User, Heart } from 'lucide-react';
+import { Home, MapPin, ArrowLeft, User, Heart, Settings } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
 import { HomeView } from './HomeView';
@@ -17,6 +17,7 @@ import { FavoritesView } from './FavoritesView';
 import { ProfileView } from './ProfileView';
 import { AuthView } from './AuthView';
 import { CompetitionView } from './CompetitionView';
+import { SettingsView } from './SettingsView';
 import { ViewTransition } from './ViewTransition';
 
 export function AppShell() {
@@ -27,6 +28,7 @@ export function AppShell() {
   const navigateToProfile = useAppStore((s) => s.navigateToProfile);
   const navigateToAuth = useAppStore((s) => s.navigateToAuth);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
+  const navigateToSettings = useAppStore((s) => s.navigateToSettings);
   const viewHistory = useAppStore((s) => s.viewHistory);
   const { isAuthenticated, supabaseConfigured } = useAuth();
 
@@ -85,6 +87,8 @@ export function AppShell() {
         return <AuthView />;
       case 'competition':
         return <CompetitionView />;
+      case 'settings':
+        return <SettingsView />;
       default:
         return <HomeView />;
     }
@@ -95,7 +99,7 @@ export function AppShell() {
     if (currentView === 'home') return 'home';
     if (['courses', 'course-detail'].includes(currentView)) return 'courses';
     if (['favorites'].includes(currentView)) return 'favorites';
-    if (['profile', 'auth', 'game-history', 'game-detail'].includes(currentView)) return 'profile';
+    if (['profile', 'auth', 'game-history', 'game-detail', 'settings'].includes(currentView)) return 'profile';
     if (['new-game', 'active-game', 'game-summary', 'competition'].includes(currentView)) return 'home';
     return 'home';
   };
@@ -125,6 +129,14 @@ export function AppShell() {
               </span>
             </button>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={navigateToSettings}
+            className="shrink-0 size-9 text-muted-foreground hover:text-foreground"
+          >
+            <Settings className="size-5" />
+          </Button>
         </div>
       </header>
 
@@ -135,11 +147,12 @@ export function AppShell() {
 
       {/* Bottom Navigation (Mobile) */}
       {!hideBottomNav && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t sm:hidden safe-area-bottom">
+        <nav className="fixed bottom-0 left-0 right-0 z-[60] bg-background/95 backdrop-blur-sm border-t sm:hidden safe-area-bottom">
           <div className="flex items-center justify-around h-14">
             <button
+              type="button"
               onClick={navigateHome}
-              className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'home'
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-muted-foreground hover:text-foreground'
@@ -149,8 +162,9 @@ export function AppShell() {
               <span className="text-[10px] font-medium">Etusivu</span>
             </button>
             <button
+              type="button"
               onClick={navigateToCourses}
-              className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'courses'
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-muted-foreground hover:text-foreground'
@@ -160,8 +174,9 @@ export function AppShell() {
               <span className="text-[10px] font-medium">Radat</span>
             </button>
             <button
+              type="button"
               onClick={navigateToFavorites}
-              className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'favorites'
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-muted-foreground hover:text-foreground'
@@ -171,8 +186,9 @@ export function AppShell() {
               <span className="text-[10px] font-medium">Suosikit</span>
             </button>
             <button
+              type="button"
               onClick={isAuthenticated ? navigateToProfile : navigateToAuth}
-              className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'profile'
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-muted-foreground hover:text-foreground'

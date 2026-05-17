@@ -22,6 +22,7 @@ import {
   Pencil,
   AlertCircle,
   ChevronRight,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useGames, useFavorites } from '@/hooks/use-disc-golf';
@@ -61,6 +62,7 @@ export function ProfileView() {
   const { data: favoritesData } = useAppStore as never; // will use useFavorites below
   const navigateToGameHistory = useAppStore((s) => s.navigateToGameHistory);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
+  const navigateToSettings = useAppStore((s) => s.navigateToSettings);
   const navigateHome = useAppStore((s) => s.navigateHome);
 
   const [editingName, setEditingName] = useState(false);
@@ -309,6 +311,25 @@ export function ProfileView() {
                 {favoritesCount > 0
                   ? `${favoritesCount} suosikkia`
                   : 'Ei suosikkeja vielä'}
+              </p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </button>
+
+          <Separator className="my-1" />
+
+          {/* Settings */}
+          <button
+            onClick={navigateToSettings}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="flex items-center justify-center size-10 rounded-lg bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 shrink-0">
+              <Settings className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">Asetukset</p>
+              <p className="text-xs text-muted-foreground">
+                Ulkonäkö ja teema
               </p>
             </div>
             <ChevronRight className="size-4 text-muted-foreground shrink-0" />

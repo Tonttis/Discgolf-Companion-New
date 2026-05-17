@@ -46,6 +46,7 @@ interface AppStore {
   navigateToGameDetail: (game: Game) => void;
   navigateToFavorites: () => void;
   navigateToCompetition: (id: number) => void;
+  navigateToSettings: () => void;
   goBack: () => void;
 
   // History
@@ -176,6 +177,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       currentView: 'competition',
       selectedCompetitionId: id,
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToSettings: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'settings',
       viewHistory: [...viewHistory, currentView],
     });
   },
