@@ -23,6 +23,7 @@ import {
   AlertCircle,
   ChevronRight,
   Settings,
+  Backpack,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useGames, useFavorites } from '@/hooks/use-disc-golf';
@@ -63,6 +64,7 @@ export function ProfileView() {
   const navigateToGameHistory = useAppStore((s) => s.navigateToGameHistory);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
   const navigateToSettings = useAppStore((s) => s.navigateToSettings);
+  const navigateToBag = useAppStore((s) => s.navigateToBag);
   const navigateHome = useAppStore((s) => s.navigateHome);
 
   const [editingName, setEditingName] = useState(false);
@@ -290,6 +292,25 @@ export function ProfileView() {
                 {gamesCount > 0
                   ? `${completedGames.length} valmista, ${inProgressGames.length} käynnissä`
                   : 'Ei pelejä vielä'}
+              </p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </button>
+
+          <Separator className="my-1" />
+
+          {/* My Bag */}
+          <button
+            onClick={navigateToBag}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="flex items-center justify-center size-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <Backpack className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">Kiekkolaukku</p>
+              <p className="text-xs text-muted-foreground">
+                Hallitse kiekkojasi ja analysoi laukkua
               </p>
             </div>
             <ChevronRight className="size-4 text-muted-foreground shrink-0" />

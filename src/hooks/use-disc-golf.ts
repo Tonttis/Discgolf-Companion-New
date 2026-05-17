@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CoursesListResponse, Course, SyncResponse, Game, Favorite } from '@/lib/types';
+import type { CoursesListResponse, Course, SyncResponse, Game, Favorite, DiscBag, Disc } from '@/lib/types';
 import type { Competition } from '@/lib/metrix-api';
 
 export function useCourses(
@@ -280,5 +280,83 @@ export function useCompetition(id: number | null) {
     },
     enabled: id !== null,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ==========================================
+// Disc Bag Hooks
+// ==========================================
+
+export function useBag() {
+  return useQuery<{ bags: DiscBag[] }>({
+    queryKey: ['bag'],
+    queryFn: async () => {
+      const response = await fetch('/api/bag');
+      if (!response.ok) throw new Error('Failed to fetch bag');
+      return response.json();
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDiscSearch(query: string, filters?: { category?: string; brand?: string }) {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (filters?.category) params.set('category', filters.category);
+  if (filters?.brand) params.set('brand', filters.brand);
+
+  return useQuery<{ discs: Disc[] }>({
+    queryKey: ['disc-search', query, filters?.category, filters?.brand],
+    queryFn: async () => {
+      const response = await fetch(`/api/discs/search?${params.toString()}`);
+      if (!response.ok) throw new Error('Failed to search discs');
+      return response.json();
+    },
+    enabled: query.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAddDiscToBag() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { bagId: string; discId: string; name: string; brand: string; category: string; speed: number; glide: number; turn: number; fade: number; stability: string }) => {
+      const response = await fetch('/api/bag/discs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to add disc to bag');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bag'] });
+    },
+  });
+}
+
+export function useRemoveDiscFromBag() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ bagId, discId }: { bagId: string; discId: string }) => {
+      const response = await fetch('/api/bag/discs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bagId, discId }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to remove disc from bag');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bag'] });
+    },
   });
 }

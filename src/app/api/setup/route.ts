@@ -281,6 +281,114 @@ CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id);
 `;
 
+// Bag tables migration SQL
+const BAG_MIGRATION_SQL = `-- ============================================
+-- Disc Bag Tables - My Bag Feature
+-- ============================================
+-- Run this SQL in your Supabase SQL Editor
+-- ============================================
+
+-- 1. disc_bags table
+CREATE TABLE IF NOT EXISTS disc_bags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Minun laukku',
+  is_primary BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. bag_discs table (denormalized for performance)
+CREATE TABLE IF NOT EXISTS bag_discs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bag_id UUID NOT NULL REFERENCES disc_bags(id) ON DELETE CASCADE,
+  disc_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  brand TEXT NOT NULL,
+  category TEXT NOT NULL,
+  speed INTEGER NOT NULL DEFAULT 0,
+  glide INTEGER NOT NULL DEFAULT 0,
+  turn INTEGER NOT NULL DEFAULT 0,
+  fade INTEGER NOT NULL DEFAULT 0,
+  stability TEXT NOT NULL DEFAULT '',
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(bag_id, disc_id)
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_disc_bags_user_id ON disc_bags(user_id);
+CREATE INDEX IF NOT EXISTS idx_bag_discs_bag_id ON bag_discs(bag_id);
+CREATE INDEX IF NOT EXISTS idx_bag_discs_category ON bag_discs(category);
+
+-- RLS
+ALTER TABLE disc_bags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bag_discs ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can view own bags" ON disc_bags FOR SELECT USING (user_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can create own bags" ON disc_bags FOR INSERT WITH CHECK (user_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own bags" ON disc_bags FOR UPDATE USING (user_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own bags" ON disc_bags FOR DELETE USING (user_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can view own bag discs" ON bag_discs FOR SELECT USING (
+    bag_id IN (SELECT id FROM disc_bags WHERE user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can add discs to own bags" ON bag_discs FOR INSERT WITH CHECK (
+    bag_id IN (SELECT id FROM disc_bags WHERE user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete discs from own bags" ON bag_discs FOR DELETE USING (
+    bag_id IN (SELECT id FROM disc_bags WHERE user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Auto-update updated_at trigger
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_disc_bags_updated_at ON disc_bags;
+CREATE TRIGGER update_disc_bags_updated_at
+  BEFORE UPDATE ON disc_bags
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Auto-create primary bag for new users
+CREATE OR REPLACE FUNCTION handle_new_user_bag()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO disc_bags (user_id, name, is_primary)
+  VALUES (NEW.id, 'Minun laukku', true);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_bag ON auth.users;
+CREATE TRIGGER on_auth_user_created_bag
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user_bag();
+`;
+
 // GET /api/setup - Check database setup status
 export async function GET() {
   try {
@@ -328,11 +436,24 @@ export async function GET() {
     // Tables exist - check if the INSERT policy is missing (common issue)
     // We try to detect this by checking if a profile can be inserted
     // For now, just return ready but also provide the fix SQL
+
+    // Check if bag tables exist
+    const { error: bagsError } = await supabase
+      .from('disc_bags')
+      .select('id')
+      .limit(1);
+
+    const bagTablesExist = !bagsError;
+
     return NextResponse.json({
       configured: true,
-      status: 'ready',
-      message: 'Database is set up and ready',
+      status: bagTablesExist ? 'ready' : 'needs_bag_migration',
+      message: bagTablesExist
+        ? 'Database is set up and ready'
+        : 'Core tables exist but bag tables need to be created',
       fixSql: FIX_SQL,
+      bagMigrationSql: bagTablesExist ? undefined : BAG_MIGRATION_SQL,
+      dashboardUrl: `https://supabase.com/dashboard/project/${supabaseUrl.replace('https://', '').replace('.supabase.co', '')}/sql`,
     });
   } catch (error) {
     return NextResponse.json({

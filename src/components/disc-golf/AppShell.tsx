@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Home, MapPin, ArrowLeft, User, Heart, Settings } from 'lucide-react';
+import { Home, MapPin, ArrowLeft, User, Heart, Settings, Backpack } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
 import { HomeView } from './HomeView';
@@ -18,6 +18,7 @@ import { ProfileView } from './ProfileView';
 import { AuthView } from './AuthView';
 import { CompetitionView } from './CompetitionView';
 import { SettingsView } from './SettingsView';
+import { MyBagView } from './MyBagView';
 import { ViewTransition } from './ViewTransition';
 
 export function AppShell() {
@@ -29,6 +30,7 @@ export function AppShell() {
   const navigateToAuth = useAppStore((s) => s.navigateToAuth);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
   const navigateToSettings = useAppStore((s) => s.navigateToSettings);
+  const navigateToBag = useAppStore((s) => s.navigateToBag);
   const viewHistory = useAppStore((s) => s.viewHistory);
   const { isAuthenticated, supabaseConfigured } = useAuth();
 
@@ -89,6 +91,8 @@ export function AppShell() {
         return <CompetitionView />;
       case 'settings':
         return <SettingsView />;
+      case 'bag':
+        return <MyBagView />;
       default:
         return <HomeView />;
     }
@@ -99,6 +103,7 @@ export function AppShell() {
     if (currentView === 'home') return 'home';
     if (['courses', 'course-detail'].includes(currentView)) return 'courses';
     if (['favorites'].includes(currentView)) return 'favorites';
+    if (['bag'].includes(currentView)) return 'bag';
     if (['profile', 'auth', 'game-history', 'game-detail', 'settings'].includes(currentView)) return 'profile';
     if (['new-game', 'active-game', 'game-summary', 'competition'].includes(currentView)) return 'home';
     return 'home';
@@ -172,6 +177,18 @@ export function AppShell() {
             >
               <MapPin className="size-5" />
               <span className="text-[10px] font-medium">Radat</span>
+            </button>
+            <button
+              type="button"
+              onClick={navigateToBag}
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
+                activeTab === 'bag'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Backpack className="size-5" />
+              <span className="text-[10px] font-medium">Laukku</span>
             </button>
             <button
               type="button"

@@ -47,6 +47,7 @@ interface AppStore {
   navigateToFavorites: () => void;
   navigateToCompetition: (id: number) => void;
   navigateToSettings: () => void;
+  navigateToBag: () => void;
   goBack: () => void;
 
   // History
@@ -185,6 +186,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { currentView, viewHistory } = get();
     set({
       currentView: 'settings',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToBag: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'bag',
       viewHistory: [...viewHistory, currentView],
     });
   },

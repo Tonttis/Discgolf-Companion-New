@@ -106,7 +106,8 @@ export type AppView =
   | 'game-history'
   | 'game-detail'
   | 'favorites'
-  | 'competition';
+  | 'competition'
+  | 'bag';
 
 // ==========================================
 // Auth & User Types
@@ -255,6 +256,108 @@ export function getScoreColor(throws: number, par: number | null): string {
   if (diff === 1) return 'text-orange-600 dark:text-orange-400';       // Bogey — orange
   if (diff === 2) return 'text-red-600 dark:text-red-400';             // Double Bogey — red
   return 'text-red-700 dark:text-red-400';                              // Triple Bogey+ — red
+}
+
+// ==========================================
+// Disc & Bag Types
+// ==========================================
+
+export interface Disc {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  speed: string;
+  glide: string;
+  turn: string;
+  fade: string;
+  stability: string;
+  nameSlug: string;
+  brandSlug: string;
+  categorySlug: string;
+  stabilitySlug: string;
+  link?: string;
+  pic?: string;
+  color?: string;
+  backgroundColor?: string;
+}
+
+export interface BagDisc {
+  id: string;
+  bagId: string;
+  discId: string;
+  name: string;
+  brand: string;
+  category: string;
+  speed: number;
+  glide: number;
+  turn: number;
+  fade: number;
+  stability: string;
+  addedAt: string;
+}
+
+export interface DiscBag {
+  id: string;
+  userId: string;
+  name: string;
+  isPrimary: boolean;
+  discs: BagDisc[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GapReport {
+  category: string;
+  gaps: GapItem[];
+}
+
+export interface GapItem {
+  description: string;
+  severity: 'high' | 'medium' | 'low';
+  suggestedSpeedRange?: string;
+  suggestedStability?: string;
+  existingCount: number;
+}
+
+export function getCategoryLabel(cat: string): string {
+  const map: Record<string, string> = {
+    'Distance Driver': 'Kaukokiekot',
+    'Hybrid Driver': 'Hybridi-kieko',
+    'Control Driver': 'Ohjauskiekot',
+    'Midrange': 'Midarit',
+    'Putter': 'Puttit',
+    'Approach': 'Lähestymiskiekot',
+  };
+  return map[cat] || cat;
+}
+
+export function getCategoryIcon(cat: string): string {
+  if (cat.includes('Distance')) return '🚀';
+  if (cat.includes('Hybrid')) return '⚡';
+  if (cat.includes('Control')) return '🎯';
+  if (cat.includes('Midrange')) return '🔄';
+  if (cat.includes('Putter')) return '🥅';
+  if (cat.includes('Approach')) return '📍';
+  return '💿';
+}
+
+export function getStabilityColor(stability: string): string {
+  if (stability.includes('Very Understable')) return 'text-yellow-600 dark:text-yellow-400';
+  if (stability.includes('Understable')) return 'text-orange-600 dark:text-orange-400';
+  if (stability.includes('Stable')) return 'text-emerald-600 dark:text-emerald-400';
+  if (stability.includes('Very Overstable')) return 'text-purple-600 dark:text-purple-400';
+  if (stability.includes('Overstable')) return 'text-blue-600 dark:text-blue-400';
+  return 'text-muted-foreground';
+}
+
+export function getStabilityBg(stability: string): string {
+  if (stability.includes('Very Understable')) return 'bg-yellow-500/15';
+  if (stability.includes('Understable')) return 'bg-orange-500/15';
+  if (stability.includes('Stable')) return 'bg-emerald-500/15';
+  if (stability.includes('Very Overstable')) return 'bg-purple-500/15';
+  if (stability.includes('Overstable')) return 'bg-blue-500/15';
+  return 'bg-muted';
 }
 
 export function getScoreBg(throws: number, par: number | null): string {
