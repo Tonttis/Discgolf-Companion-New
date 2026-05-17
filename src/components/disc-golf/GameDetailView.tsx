@@ -18,9 +18,12 @@ import {
   Medal,
   Calendar,
   Ruler,
+  Play,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useGame, useCourseDetail } from '@/hooks/use-disc-golf';
+import { useGame, useCourseDetail, useLeaveGame } from '@/hooks/use-disc-golf';
 import { getScoreName, getScoreColor, getScoreBg } from '@/lib/types';
 import type { Game, Hole } from '@/lib/types';
 
@@ -234,7 +237,11 @@ export function GameDetailView() {
   const goBack = useAppStore((s) => s.goBack);
   const navigateHome = useAppStore((s) => s.navigateHome);
   const navigateToNewGame = useAppStore((s) => s.navigateToNewGame);
+  const navigateToActiveGame = useAppStore((s) => s.navigateToActiveGame);
   const setSelectedCourse = useAppStore((s) => s.setSelectedCourse);
+  const setActiveGame = useAppStore((s) => s.setActiveGame);
+
+  const leaveGameMutation = useLeaveGame();
 
   // Fetch fresh game data — takes priority over store data
   const { data: freshGameData, isLoading: isGameLoading } = useGame(storeGame?.id ?? null);
@@ -662,6 +669,20 @@ export function GameDetailView() {
           ========================================== */}
       <section className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
+          {/* Continue game button for in-progress/abandoned games */}
+          {(game.status === 'in_progress' || game.status === 'abandoned') && (
+            <Button
+              className="flex-1 h-11 font-semibold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white"
+              onClick={() => {
+                setActiveGame(game);
+                navigateToActiveGame(game);
+              }}
+            >
+              <Play className="size-4 mr-2" />
+              Jatka peliä
+            </Button>
+          )}
+
           <Button
             variant="outline"
             className="flex-1 h-11 font-semibold"
@@ -671,12 +692,38 @@ export function GameDetailView() {
             Etusivulle
           </Button>
 
+          {game.status === 'completed' && (
+            <Button
+              className="flex-1 h-11 font-semibold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white"
+              onClick={handlePlayAgain}
+            >
+              <RotateCcw className="size-4 mr-2" />
+              Pelaa uudelleen
+            </Button>
+          )}
+        </div>
+
+        {/* Leave / Remove game button */}
+        <div className="pt-2">
           <Button
-            className="flex-1 h-11 font-semibold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white"
-            onClick={handlePlayAgain}
+            variant="ghost"
+            className="w-full h-10 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300"
+            disabled={leaveGameMutation.isPending}
+            onClick={async () => {
+              try {
+                await leaveGameMutation.mutateAsync({ gameId: game.id });
+                navigateHome();
+              } catch (err) {
+                console.error('Failed to leave game:', err);
+              }
+            }}
           >
-            <RotateCcw className="size-4 mr-2" />
-            Pelaa uudelleen
+            {leaveGameMutation.isPending ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="size-4 mr-2" />
+            )}
+            {game.players.length > 1 ? 'Poista peli profiilista' : 'Poista peli'}
           </Button>
         </div>
       </section>

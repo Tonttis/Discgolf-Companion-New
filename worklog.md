@@ -167,3 +167,24 @@ Stage Summary:
 - Mobile: Full image with swipe-to-collapse, scoring below
 - Both: Compact player rows with `Player - (score) +` format
 - No-image case handled gracefully on both desktop and mobile
+
+---
+Task ID: 7
+Agent: Main
+Task: Fix mobile image sizing, game summary scores, player 2 score visibility, continue games, remove games, browser back button
+
+Work Log:
+- **Fix 1 - Mobile image**: Changed `object-cover` to `object-contain` with `bg-gray-100 dark:bg-gray-900` background, reduced height from 50vh/55vh to 45vh/50vh so images fit as a whole without cropping
+- **Fix 2 - Game summary no scores**: After completing a game, now re-fetches the full game with all scores from `/api/games/{id}` before navigating to the summary view. Previously only stored the in-memory game object which didn't have the latest saved scores.
+- **Fix 3 - Player 2 scores not saved**: Root cause was RLS on `scores` table — INSERT policy `is_own_player_record(player_id)` prevented player 1 from saving scores for player 2. Fixed by using admin client (`createSupabaseAdminClient`) in the scores POST endpoint, with validation that the user is a game participant. Added participant check before allowing score saves.
+- **Fix 4 - Continue games**: Added "Jatka peliä" (Continue) button in both GameHistoryView (on in-progress and abandoned game cards) and GameDetailView. Uses `navigateToActiveGame()` to resume the game session. In-progress games get a green button, abandoned games get an outline button.
+- **Fix 5 - Remove games**: Added DELETE endpoint at `/api/games/[id]` that handles two cases: (1) If user is the only player, deletes the entire game; (2) If other players exist, only removes the user's player record and scores. Added `useLeaveGame` hook. "Poista" (Remove) button on game cards and "Poista peli" / "Poista peli profiilista" button in GameDetailView. Uses admin client for all deletions to bypass RLS.
+- **Fix 6 - Browser back button**: Added `popstate` event listener in AppShell that intercepts the browser back button and calls `goBack()` from the Zustand store instead of navigating away. Pushes state with `history.pushState(null, '')` on mount and on every view change so the back button can always be intercepted.
+
+Stage Summary:
+- Mobile images now show full hole image without cropping (object-contain)
+- Game summary correctly shows all scores after completion (re-fetches from API)
+- Player 1 can now save scores for player 2 (admin client bypasses RLS)
+- In-progress and abandoned games can be resumed via "Jatka" button
+- Games can be removed from profile; multiplayer games only remove the leaving player
+- Browser back button now uses in-app navigation instead of leaving the site

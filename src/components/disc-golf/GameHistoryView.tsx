@@ -27,9 +27,10 @@ import {
   ChevronRight,
   Gamepad2,
   Filter,
+  Trash2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useGames } from '@/hooks/use-disc-golf';
+import { useGames, useLeaveGame } from '@/hooks/use-disc-golf';
 import type { Game, GameStatus } from '@/lib/types';
 
 // ==========================================
@@ -184,10 +185,14 @@ function GameCardSkeleton() {
 function GameCard({
   game,
   onClick,
+  onContinue,
+  onRemove,
   index,
 }: {
   game: Game;
   onClick: () => void;
+  onContinue: () => void;
+  onRemove: () => void;
   index: number;
 }) {
   const creatorScore = getCreatorScore(game);
@@ -260,32 +265,58 @@ function GameCard({
             </div>
           )}
 
-          {/* In-progress indicator */}
+          {/* In-progress indicator + Continue button */}
           {game.status === 'in_progress' && (
             <div className="flex items-center gap-2 pt-1 border-t">
               <Play className="size-3.5 text-amber-500 shrink-0" />
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground flex-1">
                 {
                   game.scores.length > 0
                     ? `${Math.round((game.scores.filter((s) => s.playerId === game.players.find((p) => p.userId === game.createdBy)?.id).length / game.totalHoles) * 100)}% pelattu`
                     : 'Ei vielä heittoja'
                 }
               </span>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white gap-1 px-2"
+                onClick={(e) => { e.stopPropagation(); onContinue(); }}
+              >
+                <Play className="size-3" />
+                Jatka
+              </Button>
             </div>
           )}
 
-          {/* Abandoned indicator */}
+          {/* Abandoned indicator + Continue button */}
           {game.status === 'abandoned' && (
             <div className="flex items-center gap-2 pt-1 border-t">
               <XCircle className="size-3.5 text-red-400 shrink-0" />
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground flex-1">
                 Keskeytetty {formatDateFinnish(game.completedAt ?? game.startedAt)}
               </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1 px-2"
+                onClick={(e) => { e.stopPropagation(); onContinue(); }}
+              >
+                <Play className="size-3" />
+                Jatka
+              </Button>
             </div>
           )}
 
-          {/* Chevron indicator */}
-          <div className="flex items-center justify-end -mt-1">
+          {/* Remove button + Chevron */}
+          <div className="flex items-center justify-between -mt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 gap-1 px-2"
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            >
+              <Trash2 className="size-3" />
+              Poista
+            </Button>
             <ChevronRight className="size-4 text-muted-foreground/50 group-hover:text-emerald-500 transition-colors" />
           </div>
         </CardContent>
@@ -363,8 +394,12 @@ function EmptyState({
 export function GameHistoryView() {
   const goBack = useAppStore((s) => s.goBack);
   const navigateToGameDetail = useAppStore((s) => s.navigateToGameDetail);
+  const navigateToActiveGame = useAppStore((s) => s.navigateToActiveGame);
+  const setActiveGame = useAppStore((s) => s.setActiveGame);
+  const navigateHome = useAppStore((s) => s.navigateHome);
 
   const { data, isLoading, isError, error } = useGames();
+  const leaveGameMutation = useLeaveGame();
 
   const games = useMemo(() => data?.games ?? [], [data]);
 
@@ -385,6 +420,19 @@ export function GameHistoryView() {
 
   const handleGameClick = (game: Game) => {
     navigateToGameDetail(game);
+  };
+
+  const handleContinueGame = (game: Game) => {
+    setActiveGame(game);
+    navigateToActiveGame(game);
+  };
+
+  const handleRemoveGame = async (game: Game) => {
+    try {
+      await leaveGameMutation.mutateAsync({ gameId: game.id });
+    } catch (err) {
+      console.error('Failed to remove game:', err);
+    }
   };
 
   return (
@@ -530,6 +578,8 @@ export function GameHistoryView() {
                     key={game.id}
                     game={game}
                     onClick={() => handleGameClick(game)}
+                    onContinue={() => handleContinueGame(game)}
+                    onRemove={() => handleRemoveGame(game)}
                     index={index}
                   />
                 ))}
@@ -556,6 +606,8 @@ export function GameHistoryView() {
                     key={game.id}
                     game={game}
                     onClick={() => handleGameClick(game)}
+                    onContinue={() => handleContinueGame(game)}
+                    onRemove={() => handleRemoveGame(game)}
                     index={index}
                   />
                 ))}
@@ -582,6 +634,8 @@ export function GameHistoryView() {
                     key={game.id}
                     game={game}
                     onClick={() => handleGameClick(game)}
+                    onContinue={() => handleContinueGame(game)}
+                    onRemove={() => handleRemoveGame(game)}
                     index={index}
                   />
                 ))}
@@ -608,6 +662,8 @@ export function GameHistoryView() {
                     key={game.id}
                     game={game}
                     onClick={() => handleGameClick(game)}
+                    onContinue={() => handleContinueGame(game)}
+                    onRemove={() => handleRemoveGame(game)}
                     index={index}
                   />
                 ))}

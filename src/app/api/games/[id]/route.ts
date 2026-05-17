@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // GET /api/games/[id] - Get a specific game
 export async function GET(
@@ -115,6 +115,86 @@ export async function PATCH(
     return NextResponse.json({ game: { id: game.id, status: game.status } });
   } catch (error) {
     console.error('Game update error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// DELETE /api/games/[id] - Leave/remove a game for the current user
+// If the user is the only player, the game is fully deleted.
+// If other players exist, only the user's player record and scores are removed.
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    }
+
+    const adminClient = await createSupabaseAdminClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id: gameId } = await params;
+
+    // Find the user's player record in this game
+    const { data: userPlayer } = await supabase
+      .from('game_players')
+      .select('id')
+      .eq('game_id', gameId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    // Check all players in this game
+    const { data: allPlayers } = await supabase
+      .from('game_players')
+      .select('id, user_id')
+      .eq('game_id', gameId);
+
+    if (!allPlayers || allPlayers.length === 0) {
+      // No players — just delete the game entirely using admin
+      if (adminClient) {
+        await adminClient.from('scores').delete().eq('game_id', gameId);
+        await adminClient.from('games').delete().eq('id', gameId);
+      }
+      return NextResponse.json({ success: true, action: 'deleted' });
+    }
+
+    const otherPlayersExist = allPlayers.some(p => p.user_id !== user.id);
+
+    if (!otherPlayersExist) {
+      // User is the only player — delete entire game using admin
+      if (adminClient) {
+        await adminClient.from('scores').delete().eq('game_id', gameId);
+        await adminClient.from('game_players').delete().eq('game_id', gameId);
+        await adminClient.from('games').delete().eq('id', gameId);
+      }
+      return NextResponse.json({ success: true, action: 'deleted' });
+    }
+
+    // Other players exist — only remove this user's player record and scores
+    if (userPlayer) {
+      const clientToUse = adminClient || supabase;
+      // Delete user's scores first
+      await clientToUse
+        .from('scores')
+        .delete()
+        .eq('game_id', gameId)
+        .eq('player_id', userPlayer.id);
+      // Delete user's player record
+      await clientToUse
+        .from('game_players')
+        .delete()
+        .eq('id', userPlayer.id);
+    }
+
+    return NextResponse.json({ success: true, action: 'left' });
+  } catch (error) {
+    console.error('Game leave/delete error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

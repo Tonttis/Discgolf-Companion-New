@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Home, MapPin, ArrowLeft, User, Heart } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
@@ -30,6 +31,30 @@ export function AppShell() {
   const { isAuthenticated, supabaseConfigured } = useAuth();
 
   const canGoBack = viewHistory.length > 0;
+
+  // Intercept browser back button to use in-app navigation instead
+  useEffect(() => {
+    const handlePopState = () => {
+      const currentViewHistory = useAppStore.getState().viewHistory;
+      if (currentViewHistory.length > 0) {
+        // Use in-app goBack instead of browser navigation
+        useAppStore.getState().goBack();
+      }
+    };
+
+    // Push initial state so we can intercept back button
+    window.history.pushState(null, '');
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // Push state whenever view changes, so back button can be intercepted
+  useEffect(() => {
+    window.history.pushState(null, '');
+  }, [currentView]);
 
   // Hide bottom nav during active game for more screen space
   const hideBottomNav = currentView === 'active-game';

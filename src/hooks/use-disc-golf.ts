@@ -188,6 +188,26 @@ export function useCompleteGame() {
   });
 }
 
+export function useLeaveGame() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ gameId }: { gameId: string }) => {
+      const response = await fetch(`/api/games/${gameId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to leave game');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+    },
+  });
+}
+
 // ==========================================
 // Favorites Hooks
 // ==========================================

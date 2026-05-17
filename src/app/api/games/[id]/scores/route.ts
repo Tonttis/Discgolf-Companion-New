@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // POST /api/games/[id]/scores - Save scores for a hole
+// Uses admin client to bypass RLS so any game participant can save scores for all players
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -35,12 +36,29 @@ export async function POST(
 
     const validPlayerIds = new Set((gamePlayers ?? []).map(p => p.id));
 
+    // Validate that the user is a participant in this game
+    const { data: userPlayer } = await supabase
+      .from('game_players')
+      .select('id')
+      .eq('game_id', gameId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!userPlayer) {
+      return NextResponse.json({ error: 'Not a participant in this game' }, { status: 403 });
+    }
+
+    // Use admin client to upsert scores — bypasses RLS so any participant
+    // can save scores for all players in the game
+    const adminClient = await createSupabaseAdminClient();
+    const clientToUse = adminClient || supabase;
+
     // Upsert each score
     const upsertResults = await Promise.all(
       scores
         .filter((s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => validPlayerIds.has(s.playerId))
         .map(async (s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => {
-          const { error } = await supabase
+          const { error } = await clientToUse
             .from('scores')
             .upsert({
               game_id: gameId,

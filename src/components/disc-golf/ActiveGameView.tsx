@@ -372,12 +372,12 @@ function MobileImageSection({
           <img
             src={imgSrc}
             alt={`Väylä ${holeNumber}`}
-            className="w-full h-[50vh] sm:h-[55vh] object-cover"
+            className="w-full h-[45vh] sm:h-[50vh] object-contain bg-gray-100 dark:bg-gray-900"
             loading="lazy"
           />
         </a>
       ) : (
-        <div className="w-full h-[50vh] sm:h-[55vh] bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950/30 dark:to-emerald-900/20 flex flex-col items-center justify-center">
+        <div className="w-full h-[45vh] sm:h-[50vh] bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950/30 dark:to-emerald-900/20 flex flex-col items-center justify-center">
           <Flag className="size-12 text-emerald-300 dark:text-emerald-700 mb-3" />
           <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
             Väylä {holeNumber}
@@ -712,15 +712,22 @@ export function ActiveGameView() {
   // Swipe handlers (horizontal only for hole nav)
   const swipeHandlers = useSwipe(goNextHole, goPrevHole);
 
-  // Complete game handler
+  // Complete game handler — re-fetch full game with all scores before navigating to summary
   const handleCompleteGame = useCallback(async () => {
     if (!game) return;
     try {
-      const result = await completeGameMutation.mutateAsync({
+      await completeGameMutation.mutateAsync({
         gameId: game.id,
         status: 'completed',
       });
-      setSelectedGame(game);
+      // Re-fetch the full game with all scores from the API
+      const res = await fetch(`/api/games/${game.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedGame(data.game);
+      } else {
+        setSelectedGame(game);
+      }
       setActiveGame(null);
       setCurrentView('game-summary');
     } catch (err) {
