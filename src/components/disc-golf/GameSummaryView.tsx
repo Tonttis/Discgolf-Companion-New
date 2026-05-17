@@ -18,7 +18,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useCourseDetail } from '@/hooks/use-disc-golf';
+import { useGame, useCourseDetail } from '@/hooks/use-disc-golf';
 import { getScoreName, getScoreColor, getScoreBg } from '@/lib/types';
 import type { Game, Hole } from '@/lib/types';
 
@@ -252,10 +252,15 @@ function PlayerStatsCard({
 // ==========================================
 
 export function GameSummaryView() {
-  const game = useAppStore((s) => s.selectedGame);
+  const storeGame = useAppStore((s) => s.selectedGame);
   const navigateHome = useAppStore((s) => s.navigateHome);
   const navigateToNewGame = useAppStore((s) => s.navigateToNewGame);
   const setSelectedCourse = useAppStore((s) => s.setSelectedCourse);
+
+  // Fetch fresh game data from the API — takes priority over store data
+  // This ensures scores are always up-to-date even if the store had stale data
+  const { data: freshGameData, isLoading: isGameLoading } = useGame(storeGame?.id ?? null);
+  const game = freshGameData?.game ?? storeGame;
 
   const { data: courseDetail } = useCourseDetail(game?.courseSlug ?? null);
 
@@ -331,6 +336,26 @@ export function GameSummaryView() {
   const courseTotalPar = useMemo(() => {
     return holePars.reduce((sum, h) => sum + (h.par ?? 0), 0);
   }, [holePars]);
+
+  // Loading state while fetching fresh game data
+  if (isGameLoading && !storeGame) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="flex flex-col items-center justify-center py-16 text-center space-y-4"
+      >
+        <div className="size-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center animate-pulse">
+          <Trophy className="size-7 text-emerald-600 dark:text-emerald-400" />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="text-lg font-semibold">Ladataan tuloksia...</h2>
+          <p className="text-sm text-muted-foreground">Odota, pelin tuloksia ladataan</p>
+        </div>
+      </motion.div>
+    );
+  }
 
   // No game state
   if (!game) {

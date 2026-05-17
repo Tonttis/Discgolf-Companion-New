@@ -57,6 +57,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ games: [], error: error.message }, { status: 500 });
     }
 
+    // Use admin client for scores to bypass RLS — ensures ALL players' scores are returned
+    const adminClient = await createSupabaseAdminClient();
+    const scoresClient = adminClient || supabase;
+
     // For each game, get players and scores
     const enrichedGames = await Promise.all(
       (games ?? []).map(async (game) => {
@@ -65,7 +69,7 @@ export async function GET(request: NextRequest) {
             .from('game_players')
             .select('*, profiles:user_id(username, display_name)')
             .eq('game_id', game.id),
-          supabase
+          scoresClient
             .from('scores')
             .select('*')
             .eq('game_id', game.id)

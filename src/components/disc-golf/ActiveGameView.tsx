@@ -534,6 +534,9 @@ export function ActiveGameView() {
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
+  // Game completion state — tracks flush + complete + fetch cycle
+  const [isCompleting, setIsCompleting] = useState(false);
+
   // Pending saves queue
   const pendingSavesRef = useRef<Map<string, { playerId: string; holeNumber: number; throws: number; par: number | null }>>(new Map());
 
@@ -615,6 +618,9 @@ export function ActiveGameView() {
     return true;
   }, [game, players, totalHoles, localThrows]);
 
+  // Track save errors for user feedback
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   // Save scores function
   const saveScores = useCallback(
     async (scoresToSave: { playerId: string; holeNumber: number; throws: number; par: number | null }[]) => {
@@ -626,6 +632,7 @@ export function ActiveGameView() {
         keys.forEach((k) => next.delete(k));
         return next;
       });
+      setSaveError(null); // Clear previous error
       try {
         await saveScoresMutation.mutateAsync({
           gameId: game.id,
@@ -639,8 +646,10 @@ export function ActiveGameView() {
             return next;
           });
         }, 2000);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to save scores:', err);
+        const message = err instanceof Error ? err.message : 'Tulosten tallennus epäonnistui';
+        setSaveError(message);
       } finally {
         setSavingKeys((prev) => {
           const next = new Set(prev);
@@ -712,33 +721,86 @@ export function ActiveGameView() {
   // Swipe handlers (horizontal only for hole nav)
   const swipeHandlers = useSwipe(goNextHole, goPrevHole);
 
-  // Complete game handler — re-fetch full game with all scores before navigating to summary
-  const handleCompleteGame = useCallback(async () => {
+  // Flush all pending saves and save ALL local throws to the server
+  // This is called before completing the game to ensure no scores are lost
+  const flushAllSaves = useCallback(async () => {
     if (!game) return;
+
+    // 1. Clear the debounce timer and flush pending saves from the ref
+    const pendingSaves = pendingSavesRef.current;
+    const pendingScores = Array.from(pendingSaves.values());
+    pendingSaves.clear();
+
+    // 2. Also collect ALL local throws that are scored (safety net — in case
+    //    some were saved by a previous debounce but the server didn't persist them)
+    const allLocalScores: { playerId: string; holeNumber: number; throws: number; par: number | null }[] = [];
+    for (const player of players) {
+      for (let h = 1; h <= totalHoles; h++) {
+        const key = `${player.id}-${h}`;
+        const throws = localThrows[key];
+        if (throws !== undefined && throws !== null) {
+          const par = getHolePar(h);
+          allLocalScores.push({ playerId: player.id, holeNumber: h, throws, par });
+        }
+      }
+    }
+
+    // 3. Merge: start with all local scores, then override with any pending saves
+    //    (pending saves are the most recent, not yet debounced)
+    const mergedMap = new Map<string, { playerId: string; holeNumber: number; throws: number; par: number | null }>();
+    for (const score of allLocalScores) {
+      mergedMap.set(`${score.playerId}-${score.holeNumber}`, score);
+    }
+    for (const score of pendingScores) {
+      mergedMap.set(`${score.playerId}-${score.holeNumber}`, score);
+    }
+
+    const allScoresToSave = Array.from(mergedMap.values());
+    if (allScoresToSave.length === 0) return;
+
+    // 4. Save all scores in one batch (bypasses debounce — immediate save)
+    await saveScores(allScoresToSave);
+  }, [game, players, totalHoles, localThrows, getHolePar, saveScores]);
+
+  // Complete game handler — flush saves, complete, then fetch fresh data for summary
+  const handleCompleteGame = useCallback(async () => {
+    if (!game || isCompleting) return;
+    setIsCompleting(true);
     try {
+      // Step 1: Flush ALL local throws to the server before completing
+      await flushAllSaves();
+
+      // Step 2: Mark the game as completed
       await completeGameMutation.mutateAsync({
         gameId: game.id,
         status: 'completed',
       });
-      // Re-fetch the full game with all scores from the API
+
+      // Step 3: Fetch the full game with all scores from the API
+      // (admin client on server ensures all players' scores are visible)
       const res = await fetch(`/api/games/${game.id}`);
       if (res.ok) {
         const data = await res.json();
         setSelectedGame(data.game);
       } else {
+        // Fallback: build the game object from local state + saved data
         setSelectedGame(game);
       }
       setActiveGame(null);
       setCurrentView('game-summary');
     } catch (err) {
       console.error('Failed to complete game:', err);
+    } finally {
+      setIsCompleting(false);
     }
-  }, [game, completeGameMutation, setSelectedGame, setActiveGame, setCurrentView]);
+  }, [game, isCompleting, flushAllSaves, completeGameMutation, setSelectedGame, setActiveGame, setCurrentView]);
 
-  // Abandon game handler
+  // Abandon game handler — flush saves first, then mark as abandoned
   const handleAbandonGame = useCallback(async () => {
     if (!game) return;
     try {
+      // Flush any pending saves before abandoning
+      await flushAllSaves();
       await completeGameMutation.mutateAsync({
         gameId: game.id,
         status: 'abandoned',
@@ -748,7 +810,7 @@ export function ActiveGameView() {
     } catch (err) {
       console.error('Failed to abandon game:', err);
     }
-  }, [game, completeGameMutation, setActiveGame, goBack]);
+  }, [game, flushAllSaves, completeGameMutation, setActiveGame, goBack]);
 
   // Check if a specific player-hole key is being saved or saved
   const isKeySaving = (playerId: string, holeNumber: number) =>
@@ -915,20 +977,27 @@ export function ActiveGameView() {
         </div>
       </div>
 
+      {/* Save error message */}
+      {saveError && (
+        <div className="p-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-400">
+          <span className="font-semibold">Tallennusvirhe:</span> {saveError}
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="flex gap-2">
         {allHolesScored && (
           <Button
             className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white font-semibold"
             onClick={handleCompleteGame}
-            disabled={completeGameMutation.isPending}
+            disabled={isCompleting}
           >
-            {completeGameMutation.isPending ? (
+            {isCompleting ? (
               <Loader2 className="size-4 animate-spin mr-2" />
             ) : (
               <Trophy className="size-4 mr-2" />
             )}
-            Valmis
+            {isCompleting ? 'Tallennetaan...' : 'Valmis'}
           </Button>
         )}
 
@@ -937,6 +1006,7 @@ export function ActiveGameView() {
             <Button
               variant="outline"
               className={`h-10 ${allHolesScored ? '' : 'flex-1'} text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/30`}
+              disabled={isCompleting}
             >
               <XCircle className="size-4 mr-2" />
               Keskeytä
@@ -954,7 +1024,7 @@ export function ActiveGameView() {
               <AlertDialogAction
                 onClick={handleAbandonGame}
                 className="bg-red-600 hover:bg-red-700 text-white"
-                disabled={completeGameMutation.isPending}
+                disabled={isCompleting || completeGameMutation.isPending}
               >
                 {completeGameMutation.isPending ? (
                   <Loader2 className="size-4 animate-spin mr-2" />

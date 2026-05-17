@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // GET /api/games/[id] - Get a specific game
+// Uses admin client for reading scores to ensure all players' scores are visible
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -11,6 +12,8 @@ export async function GET(
     if (!supabase) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
+
+    const adminClient = await createSupabaseAdminClient();
 
     const { id } = await params;
 
@@ -24,17 +27,36 @@ export async function GET(
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }
 
+    // Use admin client for scores to bypass RLS — ensures ALL players' scores are returned
+    // Use regular client for game_players (SELECT policy already allows participants to see all players)
+    const scoresClient = adminClient || supabase;
+
     const [playersRes, scoresRes] = await Promise.all([
       supabase
         .from('game_players')
         .select('*, profiles:user_id(username, display_name)')
         .eq('game_id', game.id),
-      supabase
+      scoresClient
         .from('scores')
         .select('*')
         .eq('game_id', game.id)
         .order('hole_number', { ascending: true }),
     ]);
+
+    if (scoresRes.error) {
+      console.error('Scores fetch error (admin fallback attempt):', scoresRes.error);
+      // If admin client failed, try with regular client as fallback
+      if (adminClient) {
+        const fallbackScores = await supabase
+          .from('scores')
+          .select('*')
+          .eq('game_id', game.id)
+          .order('hole_number', { ascending: true });
+        if (!fallbackScores.error) {
+          scoresRes.data = fallbackScores.data;
+        }
+      }
+    }
 
     const enrichedGame = {
       id: game.id,

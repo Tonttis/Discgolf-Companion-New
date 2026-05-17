@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // POST /api/games/[id]/scores - Save scores for a hole
-// Uses admin client to bypass RLS so any game participant can save scores for all players
+// Strategy: Try admin client first (bypasses RLS), fall back to regular client
+// (which works if RLS policies allow game participants to save for all players)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -48,40 +49,73 @@ export async function POST(
       return NextResponse.json({ error: 'Not a participant in this game' }, { status: 403 });
     }
 
-    // Use admin client to upsert scores — bypasses RLS so any participant
-    // can save scores for all players in the game
+    // Filter to only valid player IDs
+    const validScores = scores.filter(
+      (s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => validPlayerIds.has(s.playerId)
+    );
+
+    if (validScores.length === 0) {
+      return NextResponse.json({ error: 'No valid scores to save' }, { status: 400 });
+    }
+
+    // Try admin client first (bypasses RLS), fall back to regular client
+    // (regular client works if RLS policies allow game participants to save for all players)
     const adminClient = await createSupabaseAdminClient();
     const clientToUse = adminClient || supabase;
 
-    // Upsert each score
-    const upsertResults = await Promise.all(
-      scores
-        .filter((s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => validPlayerIds.has(s.playerId))
-        .map(async (s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => {
-          const { error } = await clientToUse
-            .from('scores')
-            .upsert({
-              game_id: gameId,
-              player_id: s.playerId,
-              hole_number: s.holeNumber,
-              throws: s.throws,
-              par: s.par,
-            }, { onConflict: 'game_id,player_id,hole_number' });
-
-          if (error) {
-            console.error('Score upsert error:', error);
-          }
-          return !error;
-        })
-    );
-
-    const allSuccess = upsertResults.every(Boolean);
-
-    if (!allSuccess) {
-      return NextResponse.json({ error: 'Some scores failed to save' }, { status: 207 });
+    if (!adminClient) {
+      console.warn('Supabase admin client unavailable — using regular client with RLS policies');
     }
 
-    return NextResponse.json({ success: true });
+    // Upsert each score
+    const upsertResults = await Promise.all(
+      validScores.map(async (s: { playerId: string; holeNumber: number; throws: number; par: number | null }) => {
+        const { error, data } = await clientToUse
+          .from('scores')
+          .upsert({
+            game_id: gameId,
+            player_id: s.playerId,
+            hole_number: s.holeNumber,
+            throws: s.throws,
+            par: s.par,
+          }, { onConflict: 'game_id,player_id,hole_number' })
+          .select()
+          .maybeSingle();
+
+        if (error) {
+          console.error('Score upsert error:', { playerId: s.playerId, hole: s.holeNumber, error: error.message });
+          return { success: false, error: error.message, playerId: s.playerId, hole: s.holeNumber };
+        }
+        return { success: true, data };
+      })
+    );
+
+    const failures = upsertResults.filter((r: { success: boolean }) => !r.success);
+
+    if (failures.length > 0) {
+      // If all scores failed, it's likely an RLS issue
+      if (failures.length === validScores.length) {
+        console.error('All scores failed to save — likely RLS policy issue. Run supabase/fix-scores-rls.sql');
+        return NextResponse.json(
+          {
+            error: 'Tulosten tallennus epäonnistui. Suorita tietokantakorjaus: supabase/fix-scores-rls.sql',
+            details: failures,
+          },
+          { status: 500 }
+        );
+      }
+      // Partial failure
+      console.error('Some scores failed to save:', failures);
+      return NextResponse.json(
+        { error: `${failures.length} tulosta epäonnistui tallennuksessa`, details: failures },
+        { status: 207 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      savedCount: upsertResults.length,
+    });
   } catch (error) {
     console.error('Scores save error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

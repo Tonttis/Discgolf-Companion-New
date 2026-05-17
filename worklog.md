@@ -188,3 +188,36 @@ Stage Summary:
 - In-progress and abandoned games can be resumed via "Jatka" button
 - Games can be removed from profile; multiplayer games only remove the leaving player
 - Browser back button now uses in-app navigation instead of leaving the site
+
+---
+Task ID: 8
+Agent: Main
+Task: Re-implement robust fix for Game Summary shows no scores + Player 2 scores not visible
+
+Work Log:
+- **Root cause analysis**: Two distinct issues found:
+  1. Game Summary empty: Debounced saves (800ms) hadn't flushed to DB before completing game; also GameSummaryView only read from stale store state without re-fetching
+  2. Player 2 scores: `SUPABASE_SERVICE_ROLE_KEY` missing from `.env.local` → admin client returns null → falls back to regular client → RLS INSERT/UPDATE policies block player 1 from saving scores for player 2
+- **Fix 1 - Game Summary no scores (3-layer fix)**:
+  a. Added `flushAllSaves()` function that collects ALL local throws + pending saves and saves them in one batch before completing
+  b. Updated `handleCompleteGame` to call `flushAllSaves()` FIRST, then mark as completed, then fetch fresh data
+  c. Updated `GameSummaryView` to use `useGame()` hook to re-fetch fresh data from API on mount (like GameDetailView already does)
+  d. Added `isCompleting` state to prevent double-clicking and show "Tallennetaan..." loading text
+- **Fix 2 - Player 2 scores (2-layer fix)**:
+  a. Updated both GET `/api/games` and GET `/api/games/[id]` endpoints to use admin client for reading scores (bypasses RLS for reads)
+  b. Created `supabase/fix-scores-rls.sql` migration that changes INSERT/UPDATE policies on `scores` table from `is_own_player_record(player_id)` to `is_game_creator(game_id) OR is_game_participant(game_id)` — allowing any game participant to save scores for all players
+  c. Updated scores POST endpoint: tries admin client first, falls back to regular client (works with fixed RLS), returns clear error if both fail
+  d. Added detailed error logging with specific failure reasons per score
+- **Fix 3 - Error visibility**:
+  a. Added `saveError` state to ActiveGameView — displays red error banner when score saving fails
+  b. Added `/api/setup/check` endpoint to diagnose Supabase configuration issues
+  c. Added `/api/setup/fix-rls` endpoint that provides SQL instructions when automatic fix isn't possible
+- **Critical finding**: `.env.local` is missing `SUPABASE_SERVICE_ROLE_KEY`. Without it, the admin client is null and the only way to enable multiplayer score saving is to run the `fix-scores-rls.sql` migration in Supabase SQL Editor
+
+Stage Summary:
+- Game summary now reliably shows all scores (flush saves + re-fetch on mount)
+- Player 2 scores saving is architecturally improved but requires EITHER:
+  a. Adding `SUPABASE_SERVICE_ROLE_KEY` to `.env.local` (from Supabase Dashboard → Settings → API), OR
+  b. Running `supabase/fix-scores-rls.sql` in Supabase SQL Editor
+- Clear error feedback shown to users when saves fail
+- Diagnostic endpoints available at `/api/setup/check` and `/api/setup/fix-rls`
