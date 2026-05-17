@@ -620,19 +620,19 @@ export function GameSummaryView() {
         {/* Score legend */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-sm bg-purple-500/30" />
-            <span className="text-purple-600 dark:text-purple-400">Ace</span>
+            <span className="inline-block size-2 rounded-sm bg-amber-500/30" />
+            <span className="text-amber-600 dark:text-amber-400">Ace</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block size-2 rounded-sm bg-blue-500/15" />
+            <span className="text-blue-600 dark:text-blue-400">Eagle / Albatross</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block size-2 rounded-sm bg-emerald-500/15" />
-            <span className="text-emerald-600 dark:text-emerald-400">Eagle / Albatross</span>
+            <span className="text-emerald-600 dark:text-emerald-400">Birdie</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-sm bg-green-500/15" />
-            <span className="text-green-600 dark:text-green-400">Birdie</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-sm bg-muted" />
+            <span className="inline-block size-2 rounded-sm bg-muted/60" />
             <span>Par</span>
           </span>
           <span className="flex items-center gap-1">

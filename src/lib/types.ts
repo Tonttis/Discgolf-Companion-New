@@ -247,23 +247,25 @@ export function getScoreName(throws: number, par: number | null): string {
 export function getScoreColor(throws: number, par: number | null): string {
   if (!par) return '';
   const diff = throws - par;
-  if (throws === 1) return 'text-purple-600 dark:text-purple-400';
-  if (diff <= -2) return 'text-emerald-600 dark:text-emerald-400';
-  if (diff === -1) return 'text-green-600 dark:text-green-400';
-  if (diff === 0) return 'text-foreground';
-  if (diff === 1) return 'text-orange-600 dark:text-orange-400';
-  if (diff === 2) return 'text-red-600 dark:text-red-400';
-  return 'text-red-700 dark:text-red-400';
+  if (throws === 1) return 'text-amber-600 dark:text-amber-400';       // Ace — gold
+  if (diff <= -3) return 'text-sky-600 dark:text-sky-400';             // Albatross — blue
+  if (diff === -2) return 'text-blue-600 dark:text-blue-400';          // Eagle — blue
+  if (diff === -1) return 'text-emerald-600 dark:text-emerald-400';    // Birdie — green
+  if (diff === 0) return 'text-foreground';                             // Par — neutral
+  if (diff === 1) return 'text-orange-600 dark:text-orange-400';       // Bogey — orange
+  if (diff === 2) return 'text-red-600 dark:text-red-400';             // Double Bogey — red
+  return 'text-red-700 dark:text-red-400';                              // Triple Bogey+ — red
 }
 
 export function getScoreBg(throws: number, par: number | null): string {
   if (!par) return '';
   const diff = throws - par;
-  if (throws === 1) return 'bg-purple-500/15';
-  if (diff <= -2) return 'bg-emerald-500/15';
-  if (diff === -1) return 'bg-green-500/15';
-  if (diff === 0) return '';
-  if (diff === 1) return 'bg-orange-500/15';
-  if (diff === 2) return 'bg-red-500/15';
-  return 'bg-red-500/20';
+  if (throws === 1) return 'bg-amber-500/15';          // Ace — gold
+  if (diff <= -3) return 'bg-sky-500/15';              // Albatross — blue
+  if (diff === -2) return 'bg-blue-500/15';            // Eagle — blue
+  if (diff === -1) return 'bg-emerald-500/15';         // Birdie — green
+  if (diff === 0) return 'bg-muted/40';                // Par — subtle gray
+  if (diff === 1) return 'bg-orange-500/15';           // Bogey — orange
+  if (diff === 2) return 'bg-red-500/15';              // Double Bogey — red
+  return 'bg-red-500/20';                              // Triple Bogey+ — red
 }

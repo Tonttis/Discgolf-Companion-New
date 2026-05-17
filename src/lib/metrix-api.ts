@@ -64,11 +64,11 @@ export function getScoreColor(diff: number): string {
 }
 
 export function getHoleScoreBg(diff: number): string {
-  if (diff <= -2) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-  if (diff === -1) return 'bg-green-500/15 text-green-700 dark:text-green-400';
-  if (diff === 0) return 'bg-muted';
-  if (diff === 1) return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
-  if (diff >= 2) return 'bg-red-500/15 text-red-700 dark:text-red-400';
+  if (diff <= -2) return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';       // Eagle/Albatross — blue
+  if (diff === -1) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';  // Birdie — green
+  if (diff === 0) return 'bg-muted';                                            // Par — gray
+  if (diff === 1) return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';     // Bogey — orange
+  if (diff >= 2) return 'bg-red-500/15 text-red-700 dark:text-red-400';              // Double Bogey+ — red
   return 'bg-muted';
 }
 
