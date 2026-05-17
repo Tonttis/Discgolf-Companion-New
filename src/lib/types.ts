@@ -103,7 +103,8 @@ export type AppView =
   | 'game-summary'
   | 'game-history'
   | 'game-detail'
-  | 'favorites';
+  | 'favorites'
+  | 'competition';
 
 // ==========================================
 // Auth & User Types

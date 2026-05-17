@@ -30,6 +30,10 @@ interface AppStore {
   showNewOnly: boolean;
   setShowNewOnly: (show: boolean) => void;
 
+  // Competition
+  selectedCompetitionId: number | null;
+  setSelectedCompetitionId: (id: number | null) => void;
+
   // Navigation helpers
   navigateToCourse: (course: Course) => void;
   navigateHome: () => void;
@@ -41,6 +45,7 @@ interface AppStore {
   navigateToGameHistory: () => void;
   navigateToGameDetail: (game: Game) => void;
   navigateToFavorites: () => void;
+  navigateToCompetition: (id: number) => void;
   goBack: () => void;
 
   // History
@@ -70,6 +75,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setShowTopOnly: (show) => set({ showTopOnly: show }),
   showNewOnly: false,
   setShowNewOnly: (show) => set({ showNewOnly: show }),
+
+  selectedCompetitionId: null,
+  setSelectedCompetitionId: (id) => set({ selectedCompetitionId: id }),
 
   viewHistory: [],
 
@@ -159,6 +167,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { currentView, viewHistory } = get();
     set({
       currentView: 'favorites',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToCompetition: (id) => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'competition',
+      selectedCompetitionId: id,
       viewHistory: [...viewHistory, currentView],
     });
   },

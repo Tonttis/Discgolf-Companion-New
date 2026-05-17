@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CoursesListResponse, Course, SyncResponse, Game, Favorite } from '@/lib/types';
+import type { Competition } from '@/lib/metrix-api';
 
 export function useCourses(
   search?: string,
@@ -215,5 +216,22 @@ export function useUserSearch(username: string) {
     },
     enabled: username.length >= 1,
     staleTime: 10 * 1000,
+  });
+}
+
+// ==========================================
+// Competition Hooks
+// ==========================================
+
+export function useCompetition(id: number | null) {
+  return useQuery<Competition>({
+    queryKey: ['competition', id],
+    queryFn: async () => {
+      const response = await fetch(`/api/competitions?id=${id}`);
+      if (!response.ok) throw new Error('Failed to fetch competition');
+      return response.json();
+    },
+    enabled: id !== null,
+    staleTime: 5 * 60 * 1000,
   });
 }

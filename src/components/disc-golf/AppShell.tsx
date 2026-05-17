@@ -15,6 +15,7 @@ import { GameDetailView } from './GameDetailView';
 import { FavoritesView } from './FavoritesView';
 import { ProfileView } from './ProfileView';
 import { AuthView } from './AuthView';
+import { CompetitionView } from './CompetitionView';
 import { ViewTransition } from './ViewTransition';
 
 export function AppShell() {
@@ -57,6 +58,8 @@ export function AppShell() {
         return <ProfileView />;
       case 'auth':
         return <AuthView />;
+      case 'competition':
+        return <CompetitionView />;
       default:
         return <HomeView />;
     }
@@ -68,7 +71,7 @@ export function AppShell() {
     if (['courses', 'course-detail'].includes(currentView)) return 'courses';
     if (['favorites'].includes(currentView)) return 'favorites';
     if (['profile', 'auth', 'game-history', 'game-detail'].includes(currentView)) return 'profile';
-    if (['new-game', 'active-game', 'game-summary'].includes(currentView)) return 'home';
+    if (['new-game', 'active-game', 'game-summary', 'competition'].includes(currentView)) return 'home';
     return 'home';
   };
 

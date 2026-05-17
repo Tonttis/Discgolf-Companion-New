@@ -27,3 +27,28 @@ Stage Summary:
 - Profile auto-creation uses admin client to bypass RLS when available
 - Mobile UI improvements for touch targets, iOS zoom prevention, bottom nav overlap
 - User needs to run the fix SQL in Supabase SQL Editor to add the missing INSERT policy
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix build error - metrix-api.ts has no exports + Fix "Supabase not configured" + Fix no courses shown
+
+Work Log:
+- Fixed missing `.env.local` with Supabase credentials (root cause of "Supabase not configured")
+- Fixed `metrix-api.ts`: Was empty (just a comment). Reimplemented full DiscGolfMetrix API integration with `fetchCompetitionResult()` and `transformCompetition()` exports
+- Added score utility exports: `getScoreLabel()`, `getScoreColor()`, `getHoleScoreBg()` needed by ScorecardTable
+- Added type exports: `Track`, `Player`, `SubCompetition` (for ScorecardTable), plus competition types
+- Fixed `ScorecardTable.tsx`: Changed import from `@/lib/types` to `@/lib/metrix-api` for Track/Player/SubCompetition types
+- Added `useCompetition` hook in `use-disc-golf.ts`
+- Added `selectedCompetitionId` and `navigateToCompetition` to Zustand store
+- Added `'competition'` to `AppView` type union
+- Added `CompetitionView` to `AppShell` view rendering and navigation
+- Fixed `AppShell.tsx`: `s.navigateToHome` → `s.navigateHome` (store key mismatch)
+- Fixed `ProfileView.tsx`: Removed broken `useAppStore as never` line
+- Verified SQLite DB has 1080 courses and API returns them correctly
+
+Stage Summary:
+- Build error fixed: `metrix-api.ts` now has all required exports
+- Competition feature fully wired up (API route, hooks, store, views)
+- Supabase configured via `.env.local`
+- Courses API verified working (1080 courses in DB)

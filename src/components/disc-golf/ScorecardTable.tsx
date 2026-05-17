@@ -9,7 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import type { Track, Player, SubCompetition } from '@/lib/types';
+import type { Track, Player, SubCompetition } from '@/lib/metrix-api';
 import { getScoreLabel, getScoreColor, getHoleScoreBg } from '@/lib/metrix-api';
 
 interface ScorecardTableProps {
