@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { syncCourseList } from '@/lib/scraper/frisbeegolfradat';
 
 const SCRAPER_PORT = 3030;
 const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
@@ -28,9 +29,11 @@ export async function GET() {
       }
     }
 
-    // Sync from frisbeegolfradat.fi via scraper service
+    // Strategy 1: Try the scraper microservice
     try {
-      const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`);
+      const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`, {
+        signal: AbortSignal.timeout(30000),
+      });
 
       if (scraperResponse.ok) {
         const scraperData = await scraperResponse.json();
@@ -77,6 +80,7 @@ export async function GET() {
 
           return NextResponse.json({
             status: 'synced',
+            source: 'scraper-service',
             total: scraperData.courses.length,
             added,
             updated,
@@ -85,7 +89,22 @@ export async function GET() {
         }
       }
     } catch (error) {
-      console.error('Scraper service error:', error);
+      console.error('Scraper service error, falling back to direct fetch:', error);
+    }
+
+    // Strategy 2: Direct fetch fallback (no z-ai-web-dev-sdk needed)
+    try {
+      const result = await syncCourseList();
+      return NextResponse.json({
+        status: 'synced',
+        source: 'direct-fetch',
+        total: result.total,
+        added: result.added,
+        updated: result.updated,
+        message: `Synced ${result.total} courses directly (${result.added} new, ${result.updated} updated)`,
+      });
+    } catch (error) {
+      console.error('Direct fetch sync error:', error);
     }
 
     // Fallback: return existing data
@@ -94,7 +113,7 @@ export async function GET() {
       totalCourses: existingCount,
       message: existingCount > 0
         ? 'Course data available (sync service unavailable, using cached data)'
-        : 'No course data available',
+        : 'No course data available — check internet connection',
     });
   } catch (error) {
     console.error('Error checking course sync:', error);

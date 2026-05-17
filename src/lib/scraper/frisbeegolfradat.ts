@@ -1,7 +1,31 @@
-import ZAI from 'z-ai-web-dev-sdk';
+/**
+ * In-process scraper for frisbeegolfradat.fi
+ * Uses direct HTTP fetch() — no dependency on z-ai-web-dev-sdk.
+ * Works on any machine with internet access.
+ */
+
 import { db } from '@/lib/db';
 
 const BASE_URL = 'https://frisbeegolfradat.fi';
+
+/**
+ * Fetch a page from frisbeegolfradat.fi and return its HTML.
+ */
+async function fetchPageHtml(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'DiscGolfApp/1.0 (Course Data Sync)',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'fi,en;q=0.9',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
 
 // ==========================================
 // List Scraping Types
@@ -85,18 +109,11 @@ function extractPTagContent(html: string): string {
 function parseCourseInfoHtml(html: string): Map<string, string> {
   const result = new Map<string, string>();
 
-  // Extract the course_info <ul> section
   const sectionMatch = html.match(/<ul\s+class="course_info">([\s\S]*?)<\/ul>/);
   if (!sectionMatch) return result;
 
   const section = sectionMatch[1];
 
-  // Pattern 1: <li class="course_info_left"> or <li class="course_info_right">
-  //   <b>Label</b><br><p>Value</p>
-  // Pattern 2: <li> or <li class="course_info">
-  //   <b>Label</b><br><p>Value</p>
-
-  // Match all <li> elements within the section
   const liRegex = /<li[^>]*>\s*<b>\s*([\s\S]*?)\s*<\/b>\s*<br\s*\/?>\s*<p>\s*([\s\S]*?)\s*<\/p>\s*<\/li>/g;
   let match;
 
@@ -116,12 +133,7 @@ function parseCourseInfoHtml(html: string): Map<string, string> {
 // ==========================================
 
 export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
-  const zai = await ZAI.create();
-  const result = await zai.functions.invoke('page_reader', {
-    url: `${BASE_URL}/radat/`,
-  });
-
-  const html: string = result.data.html;
+  const html = await fetchPageHtml(`${BASE_URL}/radat/`);
 
   // Find the courses table
   const tableMatch = html.match(/<table[^>]*id="radatlistaus"[^>]*>([\s\S]*?)<\/table>/);
@@ -141,30 +153,16 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
     // Cell 3: city
     // Cell 4: holes count
 
-    // Extract classification from image alt text
     const classImgMatch = cells[1].match(/alt="(a{1,3}\d|b{1,3}\d|c{1,3}\d)"/i);
     const classification = classImgMatch ? classImgMatch[1].toLowerCase() : '';
 
-    // Extract slug and name from the link
     const linkMatch = cells[2].match(/href="\/rata\/([^"]+)"/);
     const nameMatch = cells[2].match(/href="\/rata\/[^"]+">([^<]+)<\/a>/);
-
-    // Extract numeric rating
     const ratingMatch = cells[2].match(/class="rating-average">([0-9.]+)<\/div>/);
-
-    // Extract map URL
     const mapMatch = cells[2].match(/href="(https:\/\/frisbeegolfradat\.fi\/files\/[^"]+ratakartta[^"]+)"/);
-
-    // Check for top course badge
     const isTop = cells[2].includes('course_plus');
-
-    // Check for new badge
     const isNew = cells[2].includes('UUSI');
-
-    // Extract city
     const city = stripHtml(cells[3]);
-
-    // Extract holes count
     const holes = parseInt(stripHtml(cells[4]), 10) || 0;
 
     if (linkMatch && nameMatch) {
@@ -190,12 +188,7 @@ export async function scrapeCourseList(): Promise<ScrapedCourse[]> {
 // ==========================================
 
 export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
-  const zai = await ZAI.create();
-  const result = await zai.functions.invoke('page_reader', {
-    url: `${BASE_URL}/rata/${slug}`,
-  });
-
-  const html: string = result.data.html;
+  const html = await fetchPageHtml(`${BASE_URL}/rata/${slug}`);
   const detail: CourseDetail = {};
 
   // --- 1. Extract coordinates from Google Maps link ---
@@ -206,31 +199,27 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
   }
 
   // --- 2. Extract description ---
-  // Short description is in <span class="caption"><p>TEXT<br><br><a>Lue lisää</a></p></span>
   const captionMatch = html.match(/<span\s+class="caption">\s*<p>\s*([\s\S]*?)\s*<br>/);
   if (captionMatch) {
     detail.description = extractPTagContent(captionMatch[1]);
   }
 
-  // Full description is in <span class="description">...</span>
   const descMatch = html.match(/<span\s+class="description">([\s\S]*?)<\/span>/);
   if (descMatch) {
     const fullDesc = extractPTagContent(descMatch[1]);
-    // Only store full description if it differs from the short one
     if (fullDesc && fullDesc !== detail.description) {
       detail.descriptionFull = fullDesc;
     }
   }
 
-  // --- 3. Parse all course info fields from the structured HTML ---
+  // --- 3. Parse all course info fields ---
   const infoMap = parseCourseInfoHtml(html);
 
-  // Map Finnish labels to our fields
   const labelToField: Record<string, keyof CourseDetail> = {
     'Osoite': 'address',
     'Perustettu': 'founded',
     'Korit': 'basketType',
-    'Väylien määrä': 'holes', // redundant but available
+    'Väylien määrä': 'holes',
     'Heittopaikat': 'teeType',
     'Pinnanmuodot': 'terrain',
     'Opasteet': 'signage',
@@ -245,29 +234,24 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
 
   for (const [label, field] of Object.entries(labelToField)) {
     const value = infoMap.get(label);
-    if (value && field !== 'holes') { // skip holes, already from list
+    if (value && field !== 'holes') {
       (detail as Record<string, string | number | undefined>)[field] = value;
     }
   }
 
-  // --- 4. Parse address more precisely ---
-  // The address field from HTML is like "Joensuuntie 136\n83750 Polvijärvi"
-  // Split into street, zip, city
+  // --- 4. Parse address ---
   if (detail.address) {
     const addrLines = detail.address.split('\n').map(l => l.trim()).filter(Boolean);
     if (addrLines.length >= 2) {
-      // First line is street address
       detail.address = addrLines[0];
-      // Second line may be "zipCode city"
       const zipCityMatch = addrLines[1].match(/^(\d{5})\s+(.+)$/);
       if (zipCityMatch) {
         detail.zipCode = zipCityMatch[1];
-        // City from address line (don't overwrite - already from list)
       }
     }
   }
 
-  // --- 5. Extract rating count from the star images ---
+  // --- 5. Extract rating count ---
   const ratingImgMatch = html.match(/alt="(\d+)\s+votes?,\s+average:\s+([0-9,]+)\s+out\s+of\s+5"/i);
   if (ratingImgMatch) {
     detail.ratingCount = parseInt(ratingImgMatch[1], 10);
@@ -280,16 +264,7 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
     detail.scorecardUrl = `${BASE_URL}${href}`;
   }
 
-  // --- 7. Extract map URL from detail page sidebar (more reliable than list) ---
-  if (!detail.mapUrl) {
-    const sidebarMapMatch = html.match(/class="sidebar_map">\s*<a\s+href="(https:\/\/frisbeegolfradat\.fi\/files\/[^"]+)"/);
-    if (sidebarMapMatch) {
-      // Store in mapUrl if not already set - but this is a detail-only field
-      // We'll just note it for now
-    }
-  }
-
-  // --- 8. Extract banner/cover photo and logo ---
+  // --- 7. Extract banner/cover photo and logo ---
   const coverPhotoMatch = html.match(/class="top-course-cover-photo"\s+style="background-image:\s*url\('([^']+)'\)/);
   if (coverPhotoMatch) {
     (detail as Record<string, string | number | undefined>).bannerImageUrl = coverPhotoMatch[1];

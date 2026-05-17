@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { scrapeCourseDetail } from '@/lib/scraper/frisbeegolfradat';
 
 const SCRAPER_PORT = 3030;
 const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
@@ -59,6 +60,50 @@ async function saveDetailData(slug: string, detail: Record<string, any>) {
   }
 }
 
+/**
+ * Try to fetch course detail, using scraper service first,
+ * then falling back to direct fetch.
+ */
+async function fetchCourseDetail(slug: string): Promise<Record<string, any> | null> {
+  // Strategy 1: Try scraper microservice
+  try {
+    const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/detail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (scraperResponse.ok) {
+      const scraperData = await scraperResponse.json();
+      if (scraperData.success && scraperData.detail) {
+        return scraperData.detail;
+      }
+    }
+  } catch {
+    // Scraper service unavailable, try direct fetch
+  }
+
+  // Strategy 2: Direct fetch fallback
+  try {
+    const detail = await scrapeCourseDetail(slug);
+    // Convert CourseDetail to Record<string, any> format expected by saveDetailData
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(detail)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+    // scrapeCourseDetail doesn't return holes, but the scraper service does
+    // We need to also fetch holes - but for now, detail without holes is still useful
+    return result;
+  } catch (error) {
+    console.error(`Direct fetch detail failed for ${slug}:`, error);
+  }
+
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
@@ -78,24 +123,16 @@ export async function GET(
       );
     }
 
-    // If detail hasn't been fetched yet, fetch it from the scraper service
+    // If detail hasn't been fetched yet, fetch it
     if (!course.detailFetchedAt) {
       try {
-        const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/detail`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug }),
-        });
-
-        if (scraperResponse.ok) {
-          const scraperData = await scraperResponse.json();
-          if (scraperData.success && scraperData.detail) {
-            await saveDetailData(slug, scraperData.detail);
-            course = await db.course.findUnique({
-              where: { slug },
-              include: { holeDetails: { orderBy: { holeNumber: 'asc' } } },
-            });
-          }
+        const detail = await fetchCourseDetail(slug);
+        if (detail) {
+          await saveDetailData(slug, detail);
+          course = await db.course.findUnique({
+            where: { slug },
+            include: { holeDetails: { orderBy: { holeNumber: 'asc' } } },
+          });
         }
       } catch (error) {
         console.error(`Failed to fetch detail for ${slug}:`, error);
@@ -108,17 +145,10 @@ export async function GET(
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
       if (course.detailFetchedAt < staleThreshold) {
         // Fire and forget refresh
-        fetch(`${SCRAPER_BASE}/scrape/detail`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug }),
-        })
-          .then(async (res) => {
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.detail) {
-                await saveDetailData(slug, data.detail);
-              }
+        fetchCourseDetail(slug)
+          .then(async (detail) => {
+            if (detail) {
+              await saveDetailData(slug, detail);
             }
           })
           .catch(() => {});

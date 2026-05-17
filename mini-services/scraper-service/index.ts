@@ -1,20 +1,30 @@
 /**
  * Scraper Service - Runs on port 3030
- * Isolated service for scraping frisbeegolfradat.fi using z-ai-web-dev-sdk.
- * This avoids crashes in the Next.js process when the SDK fetches large pages.
+ * Isolated service for scraping frisbeegolfradat.fi using direct HTTP fetch.
+ * No dependency on z-ai-web-dev-sdk — works on any machine with internet access.
  */
 
 const PORT = 3030;
 const BASE_URL = 'https://frisbeegolfradat.fi';
 
-let zaiInstance: any = null;
+/**
+ * Fetch a page from frisbeegolfradat.fi and return its HTML.
+ * Uses native fetch() — no special SDK required.
+ */
+async function fetchPageHtml(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'DiscGolfApp/1.0 (Course Data Sync)',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'fi,en;q=0.9',
+    },
+  });
 
-async function getZAI() {
-  if (!zaiInstance) {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    zaiInstance = await ZAI.create();
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
   }
-  return zaiInstance;
+
+  return response.text();
 }
 
 function stripHtml(html: string): string {
@@ -64,12 +74,8 @@ function parseCourseInfoHtml(html: string): Map<string, string> {
 }
 
 async function scrapeCourseList(): Promise<any[]> {
-  const zai = await getZAI();
-  const result = await zai.functions.invoke('page_reader', {
-    url: `${BASE_URL}/radat/`,
-  });
+  const html = await fetchPageHtml(`${BASE_URL}/radat/`);
 
-  const html: string = result.data.html;
   const tableMatch = html.match(/<table[^>]*id="radatlistaus"[^>]*>([\s\S]*?)<\/table>/);
   if (!tableMatch) throw new Error('Could not find courses table');
 
@@ -112,12 +118,7 @@ async function scrapeCourseList(): Promise<any[]> {
 }
 
 async function scrapeCourseDetail(slug: string): Promise<Record<string, any>> {
-  const zai = await getZAI();
-  const result = await zai.functions.invoke('page_reader', {
-    url: `${BASE_URL}/rata/${slug}`,
-  });
-
-  const html: string = result.data.html;
+  const html = await fetchPageHtml(`${BASE_URL}/rata/${slug}`);
   const detail: Record<string, any> = {};
 
   // Extract coordinates
@@ -223,49 +224,40 @@ function parseHolesFromHtml(html: string): ScrapedHole[] {
   const holes: ScrapedHole[] = [];
 
   // Only parse the first layout tab to avoid duplicate hole numbers
-  // The first layout is in <div class="layout_tab active tab-1">
   const firstLayoutMatch = html.match(/<div\s+class="layout_tab\s+active\s+tab-1">([\s\S]*?)(?:<div\s+class="layout_tab\s+tab-|<\/div>\s*<\/div>)/);
   const searchHtml = firstLayoutMatch ? firstLayoutMatch[1] : html;
 
-  // Find all <span class="fairway"> blocks within the first layout only
   const fairwayRegex = /<span\s+class="fairway">([\s\S]*?)<\/span>/g;
   let fairwayMatch;
 
   while ((fairwayMatch = fairwayRegex.exec(searchHtml)) !== null) {
     const fairwayHtml = fairwayMatch[1];
 
-    // Extract image URLs from fairway_image div
     let imageUrl: string | null = null;
     let thumbUrl: string | null = null;
 
     const imageDivMatch = fairwayHtml.match(/<div\s+class="fairway_image">([\s\S]*?)<\/div>/);
     if (imageDivMatch) {
       const imageHtml = imageDivMatch[1];
-      // Full-size image from <a href="...">
       const fullImgMatch = imageHtml.match(/<a\s+href="([^"]+)"[^>]*>/);
       if (fullImgMatch) imageUrl = fullImgMatch[1];
-      // Thumbnail from <img src="...">
       const thumbMatch = imageHtml.match(/<img\s+src="([^"]+)"/);
       if (thumbMatch) thumbUrl = thumbMatch[1];
     }
 
-    // Extract hole description
     const descDivMatch = fairwayHtml.match(/<div\s+class="fairway_desc">([\s\S]*?)<\/div>/);
     if (!descDivMatch) continue;
 
     const descHtml = descDivMatch[1];
 
-    // Extract hole name from <h4>
     const h4Match = descHtml.match(/<h4>([\s\S]*?)<\/h4>/);
     if (!h4Match) continue;
     const name = stripHtml(h4Match[1]).trim();
 
-    // Extract hole number from name like "Väylä 1: ..." or "Väylä 10: ..."
     const numMatch = name.match(/Väylä\s+(\d+)/i);
     const holeNumber = numMatch ? parseInt(numMatch[1], 10) : 0;
     if (!holeNumber) continue;
 
-    // Extract length and par from <p>Pituus 87 metriä. Par 3</p>
     let length: number | null = null;
     let par: number | null = null;
     let note: string | null = null;
@@ -275,15 +267,12 @@ function parseHolesFromHtml(html: string): ScrapedHole[] {
       const pText = stripHtml(pTag).trim();
       if (!pText) continue;
 
-      // Try to parse "Pituus 87 metriä. Par 3"
       const lengthMatch = pText.match(/Pituus\s+(\d+)\s+metri/i);
       if (lengthMatch) length = parseInt(lengthMatch[1], 10);
 
       const parMatch = pText.match(/Par\s+(\d+)/i);
       if (parMatch) par = parseInt(parMatch[1], 10);
 
-      // Anything after the Pituus/Par line that's not empty is a note
-      // e.g. "HUOM! 3-väylä ei ole toistaiseksi pelattavissa."
       if (!pText.includes('Pituus') && !pText.includes('Par')) {
         note = pText;
       }

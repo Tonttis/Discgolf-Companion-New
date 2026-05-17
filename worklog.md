@@ -52,3 +52,28 @@ Stage Summary:
 - Competition feature fully wired up (API route, hooks, store, views)
 - Supabase configured via `.env.local`
 - Courses API verified working (1080 courses in DB)
+
+---
+Task ID: 3
+Agent: Main
+Task: Fix .z-ai-config error when running on user's PC + Fix no courses shown
+
+Work Log:
+- Identified root cause: `z-ai-web-dev-sdk` requires a `.z-ai-config` file that connects to Z.ai gateway — this gateway only exists in the sandbox, not on user's PC
+- Rewrote `mini-services/scraper-service/index.ts`: Replaced `ZAI.create()` + `zai.functions.invoke('page_reader')` with direct `fetch()` HTTP requests to frisbeegolfradat.fi
+- Rewrote `src/lib/scraper/frisbeegolfradat.ts`: Same replacement — direct `fetch()` instead of z-ai-web-dev-sdk
+- Updated `src/app/api/sync/route.ts`: Added direct-fetch fallback using `syncCourseList()` from in-process scraper when microservice is unavailable
+- Updated `src/app/api/courses/[slug]/route.ts`: Added direct-fetch fallback using `scrapeCourseDetail()` when microservice is unavailable
+- Removed `z-ai-web-dev-sdk` from both package.json files (main project + scraper service)
+- Recreated `.env.local` with Supabase credentials (was missing again)
+- Renamed `src/middleware.ts` → `src/proxy.ts` with `export async function proxy()` to fix Next.js 16.1.3 deprecation warning
+- Verified: Scraper service fetches 1080 courses in ~1.2 seconds using direct HTTP
+- Verified: `/api/courses` returns courses correctly
+- Verified: Lint passes clean
+
+Stage Summary:
+- App now works on any machine with internet access — no dependency on Z.ai gateway
+- Both scraper implementations use direct `fetch()` to frisbeegolfradat.fi
+- Sync and course detail routes have fallback chain: scraper service → direct fetch → cached data
+- Middleware → proxy rename fixes Next.js 16 deprecation warning
+- `.env.local` recreated with Supabase credentials

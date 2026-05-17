@@ -1,11 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+// Next.js 16 uses "proxy" convention instead of deprecated "middleware"
+export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  // Skip middleware if Supabase is not configured
+  // Skip if Supabase is not configured
   if (!url || !key || url === 'your-supabase-url-here') {
     return NextResponse.next({ request });
   }
