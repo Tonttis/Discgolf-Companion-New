@@ -79,12 +79,13 @@ export interface CoursesListResponse {
 }
 
 export interface SyncResponse {
-  status: 'cached' | 'synced';
+  status: 'cached' | 'synced' | 'empty';
   totalCourses?: number;
   lastUpdated?: string;
   added?: number;
   updated?: number;
   total?: number;
+  needsResync?: boolean;
   message: string;
 }
 

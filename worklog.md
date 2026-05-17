@@ -106,3 +106,32 @@ Stage Summary:
 - New SQL fix file: `supabase/fix-rls-recursion.sql` (for existing installations)
 - Updated `supabase/migration.sql` (for fresh installations)
 - User needs to run the fix SQL in Supabase SQL Editor to resolve the game_players recursion error
+
+---
+Task ID: 5
+Agent: Main
+Task: Fix skipDuplicates Prisma error (SQLite unsupported) + Fix sync loading forever in dev mode
+
+Work Log:
+- **skipDuplicates error**: Prisma's `createMany({ skipDuplicates: true })` is only supported for PostgreSQL and CockroachDB, NOT SQLite. Removed `skipDuplicates` from all `createMany()` calls in both `sync/route.ts` and `frisbeegolfradat.ts`
+- Instead of skipDuplicates, we now pre-filter: query all existing slugs first, then only insert courses that don't already exist
+- Added fallback: if a batch insert chunk fails, retry each course individually to isolate bad records
+- **Sync loading forever**: Root cause was that `useSync()` blocked the course list UI until the entire scrape + DB sync completed (could take 30-60+ seconds)
+- Restructured sync flow:
+  - `/api/sync` returns cached immediately if ≥100 courses exist (even if stale)
+  - When courses < 100, returns `needsResync: true` flag instead of blocking
+  - Only does the slow full scrape when DB is completely empty or `?force=true`
+  - Scraper service timeout reduced from 30s to 10s
+- Updated `useSync()` hook: removed the auto-force-sync that made two sequential requests; now returns whatever the API gives quickly
+- Updated `CourseListView`: Shows courses from local DB immediately; sync status bar shows in background; "Osittainen — päivitä" badge for partial data; manual "Päivitä" button for force sync
+- Added `needsResync` field to `SyncResponse` type
+- Added `'empty'` status to `SyncResponse` type union
+- Updated batch size from 100 to 50 for SQLite variable limit safety
+- Skips batch updates during initial bulk sync (first time loading all 1080 courses) for much faster initial load
+- Verified lint passes clean
+
+Stage Summary:
+- `skipDuplicates` error fixed — no longer used with SQLite
+- Courses display immediately from local DB without waiting for sync
+- Sync runs in background; manual refresh available via "Päivitä" button
+- Partial data (28 courses) shown immediately with "Osittainen — päivitä" badge

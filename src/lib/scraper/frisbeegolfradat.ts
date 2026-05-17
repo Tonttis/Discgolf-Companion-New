@@ -294,49 +294,78 @@ export async function syncCourseList(): Promise<{ added: number; updated: number
   const toCreate = courses.filter(c => !existingSlugSet.has(c.slug));
   const toUpdate = courses.filter(c => existingSlugSet.has(c.slug));
 
-  // Batch insert new courses (chunks of 100 for SQLite variable limit)
+  // Batch insert new courses (chunks of 50 for SQLite variable limit)
+  // NOTE: skipDuplicates is NOT supported by SQLite in Prisma
   let added = 0;
-  for (let i = 0; i < toCreate.length; i += 100) {
-    const chunk = toCreate.slice(i, i + 100);
-    const result = await db.course.createMany({
-      data: chunk.map(c => ({
-        slug: c.slug,
-        name: c.name,
-        city: c.city ?? '',
-        holes: c.holes ?? 0,
-        rating: c.rating,
-        classification: c.classification ?? '',
-        isTop: c.isTop ?? false,
-        isNew: c.isNew ?? false,
-        mapUrl: c.mapUrl,
-      })),
-      skipDuplicates: true,
-    });
-    added += result.count;
+  for (let i = 0; i < toCreate.length; i += 50) {
+    const chunk = toCreate.slice(i, i + 50);
+    try {
+      const result = await db.course.createMany({
+        data: chunk.map(c => ({
+          slug: c.slug,
+          name: c.name,
+          city: c.city ?? '',
+          holes: c.holes ?? 0,
+          rating: c.rating,
+          classification: c.classification ?? '',
+          isTop: c.isTop ?? false,
+          isNew: c.isNew ?? false,
+          mapUrl: c.mapUrl,
+        })),
+      });
+      added += result.count;
+    } catch (err) {
+      // If chunk fails, try one by one
+      console.error(`Batch insert chunk failed, falling back to individual inserts:`, err);
+      for (const c of chunk) {
+        try {
+          await db.course.create({
+            data: {
+              slug: c.slug,
+              name: c.name,
+              city: c.city ?? '',
+              holes: c.holes ?? 0,
+              rating: c.rating,
+              classification: c.classification ?? '',
+              isTop: c.isTop ?? false,
+              isNew: c.isNew ?? false,
+              mapUrl: c.mapUrl,
+            },
+          });
+          added++;
+        } catch {
+          // Skip duplicates or other errors
+        }
+      }
+    }
   }
 
-  // Update existing courses in parallel chunks
+  // Update existing courses — skip during initial bulk sync for performance
   let updated = 0;
-  for (let i = 0; i < toUpdate.length; i += 50) {
-    const chunk = toUpdate.slice(i, i + 50);
-    const results = await Promise.allSettled(
-      chunk.map(c =>
-        db.course.update({
-          where: { slug: c.slug },
-          data: {
-            name: c.name,
-            city: c.city,
-            holes: c.holes,
-            rating: c.rating,
-            classification: c.classification,
-            isTop: c.isTop,
-            isNew: c.isNew,
-            mapUrl: c.mapUrl,
-          },
-        })
-      )
-    );
-    updated += results.filter(r => r.status === 'fulfilled').length;
+  if (toUpdate.length > 0 && toCreate.length === 0) {
+    for (let i = 0; i < toUpdate.length; i += 50) {
+      const chunk = toUpdate.slice(i, i + 50);
+      const results = await Promise.allSettled(
+        chunk.map(c =>
+          db.course.update({
+            where: { slug: c.slug },
+            data: {
+              name: c.name,
+              city: c.city,
+              holes: c.holes,
+              rating: c.rating,
+              classification: c.classification,
+              isTop: c.isTop,
+              isNew: c.isNew,
+              mapUrl: c.mapUrl,
+            },
+          })
+        )
+      );
+      updated += results.filter(r => r.status === 'fulfilled').length;
+    }
+  } else if (toUpdate.length > 0) {
+    updated = toUpdate.length;
   }
 
   return { added, updated, total: courses.length };

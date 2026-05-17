@@ -38,7 +38,7 @@ export function CourseListView() {
     return () => clearTimeout(timer);
   }, [localSearch, setSearchQuery]);
 
-  // Trigger sync on first load
+  // Sync runs in background — does NOT block course display
   const sync = useSync();
   const forceSync = useForceSync();
 
@@ -74,22 +74,36 @@ export function CourseListView() {
 
   const hasActiveFilters = selectedCity || selectedClassification || showTopOnly || showNewOnly || searchQuery;
 
+  // Determine if we should show loading state
+  // Only show full loading on FIRST load with no cached data
+  const isInitialLoad = isLoading && !data;
+
   return (
     <div className="space-y-4">
-      {/* Sync status */}
-      {sync.isLoading && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-          <RefreshCw className="size-3 animate-spin" />
-          Ladataan ratoja Frisbeegolfradat.fi:stä...
-        </div>
-      )}
-      {sync.data && !sync.isLoading && (
+      {/* Sync status bar — always visible when sync data exists */}
+      {sync.data && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{sync.data.totalCourses ?? sync.data.total ?? 0} rataa Frisbeegolfradat.fi:stä</span>
+          <span>{sync.data.totalCourses ?? sync.data.total ?? 0} rataa</span>
           {sync.data.status === 'synced' && (
             <Badge variant="outline" className="text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
               Synkronoitu
             </Badge>
+          )}
+          {sync.data.status === 'cached' && !sync.data.needsResync && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              Välimuistissa
+            </Badge>
+          )}
+          {sync.data.needsResync && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              Osittainen — päivitä
+            </Badge>
+          )}
+          {sync.isLoading && (
+            <span className="flex items-center gap-1">
+              <RefreshCw className="size-3 animate-spin" />
+              Päivitetään...
+            </span>
           )}
           {forceSync.isPending ? (
             <RefreshCw className="size-3 animate-spin ml-auto" />
@@ -104,6 +118,14 @@ export function CourseListView() {
               Päivitä
             </Button>
           )}
+        </div>
+      )}
+
+      {/* Show sync loading indicator only if we have NO courses at all */}
+      {sync.isLoading && !data && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+          <RefreshCw className="size-3 animate-spin" />
+          Ladataan ratoja Frisbeegolfradat.fi:stä...
         </div>
       )}
 
@@ -237,8 +259,8 @@ export function CourseListView() {
         </div>
       )}
 
-      {/* Loading */}
-      {(isLoading || sync.isLoading) && (
+      {/* Loading — only on true initial load (no cached data) */}
+      {isInitialLoad && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <CourseCardSkeleton key={i} />
@@ -258,7 +280,7 @@ export function CourseListView() {
       )}
 
       {/* Empty */}
-      {!isLoading && !sync.isLoading && !isError && data?.courses.length === 0 && (
+      {!isInitialLoad && !isError && data?.courses.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
           <div className="text-4xl">🔍</div>
           <p className="font-medium">No courses found</p>
@@ -273,8 +295,8 @@ export function CourseListView() {
         </div>
       )}
 
-      {/* Course Grid */}
-      {!isLoading && !sync.isLoading && !isError && data && data.courses.length > 0 && (
+      {/* Course Grid — show as soon as data is available, even while sync runs */}
+      {!isInitialLoad && !isError && data && data.courses.length > 0 && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {data.courses.map((course) => (

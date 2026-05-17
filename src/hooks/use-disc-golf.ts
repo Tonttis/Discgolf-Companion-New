@@ -43,30 +43,30 @@ export function useCourseDetail(slug: string | null) {
   });
 }
 
+/**
+ * useSync — checks sync status quickly. Does NOT block the UI.
+ * Returns cached status immediately. Use useForceSync for manual refresh.
+ */
 export function useSync() {
   return useQuery<SyncResponse>({
     queryKey: ['sync'],
     queryFn: async () => {
-      // Force re-sync if we have fewer than expected courses
       const response = await fetch('/api/sync');
       if (!response.ok) throw new Error('Failed to sync');
-      const data = await response.json();
-
-      // If cached but count is too low, force re-sync
-      if (data.status === 'cached' && (data.totalCourses ?? 0) < 100) {
-        const forceResponse = await fetch('/api/sync?force=true');
-        if (forceResponse.ok) {
-          return forceResponse.json();
-        }
-      }
-
-      return data;
+      return response.json();
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+    // Don't retry aggressively — if sync fails, show what we have
+    retry: 1,
+    retryDelay: 5000,
   });
 }
 
+/**
+ * useForceSync — forces a full re-sync from frisbeegolfradat.fi.
+ * Use for the manual "Refresh" button. Invalidates courses list on success.
+ */
 export function useForceSync() {
   const queryClient = useQueryClient();
 

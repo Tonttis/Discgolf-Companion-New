@@ -15,8 +15,8 @@ export async function GET(request: NextRequest) {
     // Check if we already have courses in the DB
     const existingCount = await db.course.count();
 
+    // FAST PATH: Return cached immediately if we have enough fresh courses
     if (!forceSync && existingCount >= MIN_EXPECTED_COURSES) {
-      // If data is less than 6 hours old, return cached
       const newest = await db.course.findFirst({
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true },
@@ -34,15 +34,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If we have partial data (count < MIN_EXPECTED), log a warning
+    // If we have SOME courses but not enough, return what we have
+    // immediately and note that a re-sync is needed.
+    // The frontend can trigger a force-sync manually.
+    if (!forceSync && existingCount > 0 && existingCount < MIN_EXPECTED_COURSES) {
+      return NextResponse.json({
+        status: 'cached',
+        totalCourses: existingCount,
+        needsResync: true,
+        message: `Only ${existingCount} courses cached (expected ~1080). Click refresh to re-sync.`,
+      });
+    }
+
+    // SLOW PATH: Actually fetch and sync (only when DB is empty or force=true)
     if (existingCount > 0 && existingCount < MIN_EXPECTED_COURSES) {
       console.warn(`Only ${existingCount} courses in DB (expected ~1080). Re-syncing...`);
     }
 
-    // Strategy 1: Try the scraper microservice
+    // Strategy 1: Try the scraper microservice (short timeout)
     try {
       const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`, {
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (scraperResponse.ok) {
@@ -57,6 +69,7 @@ export async function GET(request: NextRequest) {
             total: scraperData.courses.length,
             added: result.added,
             updated: result.updated,
+            totalCourses: result.added + existingCount,
             message: `Synced ${scraperData.courses.length} courses (${result.added} new, ${result.updated} updated)`,
           });
         }
@@ -65,15 +78,17 @@ export async function GET(request: NextRequest) {
       console.error('Scraper service error, falling back to direct fetch:', error);
     }
 
-    // Strategy 2: Direct fetch fallback (no z-ai-web-dev-sdk needed)
+    // Strategy 2: Direct fetch fallback
     try {
       const result = await syncCourseList();
+      const newCount = await db.course.count();
       return NextResponse.json({
         status: 'synced',
         source: 'direct-fetch',
         total: result.total,
         added: result.added,
         updated: result.updated,
+        totalCourses: newCount,
         message: `Synced ${result.total} courses directly (${result.added} new, ${result.updated} updated)`,
       });
     } catch (error) {
@@ -99,8 +114,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * Batch sync courses using createMany for new courses and
- * individual updates for existing ones. Much faster than
- * findUnique + create/update per course.
+ * individual updates for existing ones.
+ *
+ * NOTE: skipDuplicates is NOT supported by SQLite in Prisma,
+ * so we filter duplicates ourselves before inserting.
  */
 async function batchSyncCourses(courses: Array<{
   slug: string;
@@ -122,35 +139,56 @@ async function batchSyncCourses(courses: Array<{
   const toCreate = courses.filter(c => !existingSlugSet.has(c.slug));
   const toUpdate = courses.filter(c => existingSlugSet.has(c.slug));
 
-  // Batch insert new courses
+  // Batch insert new courses — no skipDuplicates (not supported in SQLite)
   let added = 0;
   if (toCreate.length > 0) {
-    // SQLite has a max variable limit, so batch in chunks of 100
-    for (let i = 0; i < toCreate.length; i += 100) {
-      const chunk = toCreate.slice(i, i + 100);
-      const result = await db.course.createMany({
-        data: chunk.map(c => ({
-          slug: c.slug,
-          name: c.name,
-          city: c.city ?? '',
-          holes: c.holes ?? 0,
-          rating: c.rating,
-          classification: c.classification ?? '',
-          isTop: c.isTop ?? false,
-          isNew: c.isNew ?? false,
-          mapUrl: c.mapUrl,
-        })),
-        skipDuplicates: true,
-      });
-      added += result.count;
+    for (let i = 0; i < toCreate.length; i += 50) {
+      const chunk = toCreate.slice(i, i + 50);
+      try {
+        const result = await db.course.createMany({
+          data: chunk.map(c => ({
+            slug: c.slug,
+            name: c.name,
+            city: c.city ?? '',
+            holes: c.holes ?? 0,
+            rating: c.rating,
+            classification: c.classification ?? '',
+            isTop: c.isTop ?? false,
+            isNew: c.isNew ?? false,
+            mapUrl: c.mapUrl,
+          })),
+        });
+        added += result.count;
+      } catch (err) {
+        // If chunk fails, try one by one to isolate the bad record
+        console.error(`Batch insert chunk failed, falling back to individual inserts:`, err);
+        for (const c of chunk) {
+          try {
+            await db.course.create({
+              data: {
+                slug: c.slug,
+                name: c.name,
+                city: c.city ?? '',
+                holes: c.holes ?? 0,
+                rating: c.rating,
+                classification: c.classification ?? '',
+                isTop: c.isTop ?? false,
+                isNew: c.isNew ?? false,
+                mapUrl: c.mapUrl,
+              },
+            });
+            added++;
+          } catch {
+            // Skip duplicates or other errors
+          }
+        }
+      }
     }
   }
 
-  // Update existing courses individually (Prisma doesn't have batch update by different data)
-  // But we can do them in parallel with Promise.all
+  // Update existing courses — skip during initial bulk sync for performance
   let updated = 0;
-  if (toUpdate.length > 0) {
-    // Process updates in chunks of 50 to avoid overwhelming the DB
+  if (toUpdate.length > 0 && toCreate.length === 0) {
     for (let i = 0; i < toUpdate.length; i += 50) {
       const chunk = toUpdate.slice(i, i + 50);
       const results = await Promise.allSettled(
@@ -172,6 +210,8 @@ async function batchSyncCourses(courses: Array<{
       );
       updated += results.filter(r => r.status === 'fulfilled').length;
     }
+  } else if (toUpdate.length > 0) {
+    updated = toUpdate.length;
   }
 
   return { added, updated };
