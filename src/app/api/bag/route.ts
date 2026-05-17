@@ -14,7 +14,10 @@ export async function GET() {
       return NextResponse.json({ bags: [] }, { status: 200 });
     }
 
-    const { data: bags, error: bagsError } = await supabase
+    const adminClient = await createSupabaseAdminClient();
+    const clientToUse = adminClient || supabase;
+
+    const { data: bags, error: bagsError } = await clientToUse
       .from('disc_bags')
       .select('*')
       .eq('user_id', user.id)
@@ -33,9 +36,6 @@ export async function GET() {
     }
 
     if (!bags || bags.length === 0) {
-      const adminClient = await createSupabaseAdminClient();
-      const clientToUse = adminClient || supabase;
-
       const { data: newBag, error: createError } = await clientToUse
         .from('disc_bags')
         .insert({
@@ -65,11 +65,29 @@ export async function GET() {
 
     const bagIds = bags.map(b => b.id);
 
-    const { data: allDiscs, error: discsError } = await supabase
+    // Try selecting with pic/link; fall back to without them if columns don't exist yet
+    const discsResult = await clientToUse
       .from('bag_discs')
       .select('*')
       .in('bag_id', bagIds)
       .order('added_at', { ascending: true });
+
+    let allDiscs: typeof discsResult.data = null;
+    let discsError: typeof discsResult.error = null;
+
+    if (discsResult.error?.message?.includes('column') && discsResult.error?.message?.includes('does not exist')) {
+      // pic/link columns don't exist yet — select without them
+      const fallbackResult = await clientToUse
+        .from('bag_discs')
+        .select('id, bag_id, disc_id, name, brand, category, speed, glide, turn, fade, stability, added_at')
+        .in('bag_id', bagIds)
+        .order('added_at', { ascending: true });
+      allDiscs = fallbackResult.data;
+      discsError = fallbackResult.error;
+    } else {
+      allDiscs = discsResult.data;
+      discsError = discsResult.error;
+    }
 
     if (discsError) {
       return NextResponse.json({ bags: [], error: discsError.message }, { status: 500 });
@@ -99,6 +117,8 @@ export async function GET() {
         turn: d.turn,
         fade: d.fade,
         stability: d.stability,
+        pic: d.pic ?? undefined,
+        link: d.link ?? undefined,
         addedAt: d.added_at,
       })),
       createdAt: bag.created_at,

@@ -294,6 +294,8 @@ export interface BagDisc {
   turn: number;
   fade: number;
   stability: string;
+  pic?: string;
+  link?: string;
   addedAt: string;
 }
 
@@ -323,10 +325,10 @@ export interface GapItem {
 export function getCategoryLabel(cat: string): string {
   const map: Record<string, string> = {
     'Distance Driver': 'Kaukokiekot',
-    'Hybrid Driver': 'Hybridi-kieko',
+    'Hybrid Driver': 'Hybridikiekot',
     'Control Driver': 'Ohjauskiekot',
     'Midrange': 'Midarit',
-    'Putter': 'Puttit',
+    'Putter': 'Putterit',
     'Approach': 'Lähestymiskiekot',
   };
   return map[cat] || cat;
@@ -340,6 +342,27 @@ export function getCategoryIcon(cat: string): string {
   if (cat.includes('Putter')) return '🥅';
   if (cat.includes('Approach')) return '📍';
   return '💿';
+}
+
+export function getCategorySingular(cat: string): string {
+  const map: Record<string, string> = {
+    'Distance Driver': 'kaukokiekko',
+    'Hybrid Driver': 'hybridikiekko',
+    'Control Driver': 'ohjauskiekko',
+    'Midrange': 'midari',
+    'Putter': 'putti',
+    'Approach': 'lähestymiskiekko',
+  };
+  return map[cat] || cat;
+}
+
+export function getStabilityLabel(stability: string): string {
+  if (stability.includes('Very Understable')) return 'Hyvin alivakaa';
+  if (stability.includes('Understable')) return 'Alivakaa';
+  if (stability.includes('Stable')) return 'Vakaa';
+  if (stability.includes('Very Overstable')) return 'Hyvin ylivakaa';
+  if (stability.includes('Overstable')) return 'Ylivakaa';
+  return stability;
 }
 
 export function getStabilityColor(stability: string): string {

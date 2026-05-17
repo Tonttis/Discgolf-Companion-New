@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { bagId, discId, name, brand, category, speed, glide, turn, fade, stability } = body;
+    const { bagId, discId, name, brand, category, speed, glide, turn, fade, stability, pic, link } = body;
 
     if (!bagId || !discId || !name || !brand || !category || !stability) {
       return NextResponse.json({ error: 'Missing required fields: bagId, discId, name, brand, category, stability' }, { status: 400 });
@@ -64,27 +64,51 @@ export async function POST(request: NextRequest) {
           turn: existing.turn,
           fade: existing.fade,
           stability: existing.stability,
+          pic: existing.pic ?? undefined,
+          link: existing.link ?? undefined,
           addedAt: existing.added_at,
         },
       });
     }
 
-    const { data: disc, error } = await clientToUse
+    // Try insert with pic/link columns first; fall back to without them if columns don't exist yet
+    const insertBase = {
+      bag_id: bagId,
+      disc_id: discId,
+      name,
+      brand,
+      category,
+      speed: speed ?? 0,
+      glide: glide ?? 0,
+      turn: turn ?? 0,
+      fade: fade ?? 0,
+      stability,
+    };
+
+    let disc: typeof insertBase & { id: string; added_at: string; pic?: string | null; link?: string | null } | null = null;
+    let error: { message?: string } | null = null;
+
+    // Try with pic/link columns
+    const withMedia = { ...insertBase, pic: pic ?? null, link: link ?? null };
+    const resultWithMedia = await clientToUse
       .from('bag_discs')
-      .insert({
-        bag_id: bagId,
-        disc_id: discId,
-        name,
-        brand,
-        category,
-        speed: speed ?? 0,
-        glide: glide ?? 0,
-        turn: turn ?? 0,
-        fade: fade ?? 0,
-        stability,
-      })
+      .insert(withMedia)
       .select()
       .single();
+
+    if (resultWithMedia.error?.message?.includes('column') && resultWithMedia.error?.message?.includes('does not exist')) {
+      // pic/link columns don't exist yet — insert without them
+      const resultWithoutMedia = await clientToUse
+        .from('bag_discs')
+        .insert(insertBase)
+        .select()
+        .single();
+      disc = resultWithoutMedia.data;
+      error = resultWithoutMedia.error;
+    } else {
+      disc = resultWithMedia.data;
+      error = resultWithMedia.error;
+    }
 
     if (error || !disc) {
       return NextResponse.json({ error: error?.message || 'Failed to add disc to bag' }, { status: 500 });
@@ -103,6 +127,8 @@ export async function POST(request: NextRequest) {
         turn: disc.turn,
         fade: disc.fade,
         stability: disc.stability,
+        pic: disc.pic ?? undefined,
+        link: disc.link ?? undefined,
         addedAt: disc.added_at,
       },
     }, { status: 201 });

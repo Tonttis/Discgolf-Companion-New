@@ -311,6 +311,8 @@ CREATE TABLE IF NOT EXISTS bag_discs (
   turn INTEGER NOT NULL DEFAULT 0,
   fade INTEGER NOT NULL DEFAULT 0,
   stability TEXT NOT NULL DEFAULT '',
+  pic TEXT,
+  link TEXT,
   added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(bag_id, disc_id)
 );

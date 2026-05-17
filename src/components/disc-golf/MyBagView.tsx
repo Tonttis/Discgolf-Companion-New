@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -34,18 +33,21 @@ import {
   ZAxis,
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import {
   Search,
   Plus,
   X,
   Loader2,
   Backpack,
-  ChevronDown,
   AlertTriangle,
   CheckCircle2,
   Pencil,
   Check,
   Disc3,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useQueryClient } from '@tanstack/react-query';
@@ -58,9 +60,11 @@ import {
 import type { BagDisc, Disc, GapItem, GapReport } from '@/lib/types';
 import {
   getCategoryLabel,
+  getCategorySingular,
   getCategoryIcon,
   getStabilityColor,
   getStabilityBg,
+  getStabilityLabel,
 } from '@/lib/types';
 import { toast } from 'sonner';
 
@@ -98,7 +102,7 @@ const SEARCH_CATEGORY_OPTIONS = [
   { value: 'all', label: 'Kaikki' },
   { value: 'Distance Driver', label: 'Kaukokiekot' },
   { value: 'Midrange', label: 'Midarit' },
-  { value: 'Putter', label: 'Puttit' },
+  { value: 'Putter', label: 'Putterit' },
   { value: 'other', label: 'Muut' },
 ];
 
@@ -135,10 +139,10 @@ function FlightPill({ value, label }: { value: number; label: string }) {
 // ==========================================
 function StabilityBadge({ stability }: { stability: string }) {
   const shortLabel = stability
-    .replace('Very Understable', 'HyAlik')
-    .replace('Understable', 'Alik')
-    .replace('Very Overstable', 'HyYliv')
-    .replace('Overstable', 'Yliv')
+    .replace('Very Understable', 'Hy. aliv.')
+    .replace('Understable', 'Alivakaa')
+    .replace('Very Overstable', 'Hy. yliv.')
+    .replace('Overstable', 'Ylivakaa')
     .replace('Stable', 'Vakaa');
 
   return (
@@ -151,29 +155,31 @@ function StabilityBadge({ stability }: { stability: string }) {
 // ==========================================
 // Flight chart tooltip
 // ==========================================
-function FlightChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; brand: string; speed: number; glide: number; turn: number; fade: number; category: string } }> }) {
+function FlightChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; brand: string; speed: number; glide: number; turn: number; fade: number; category: string; stability: string } }> }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="rounded-lg border bg-background p-3 shadow-lg text-sm">
       <p className="font-semibold">{d.name}</p>
-      <p className="text-xs text-muted-foreground">{d.brand}</p>
+      <p className="text-xs text-muted-foreground">{d.brand} · {getCategoryLabel(d.category)}</p>
       <div className="flex items-center gap-1.5 mt-1.5">
         <span className="text-xs">Nopeus: {d.speed}</span>
         <span className="text-xs text-muted-foreground">|</span>
         <span className="text-xs">Liito: {d.glide}</span>
         <span className="text-xs text-muted-foreground">|</span>
-        <span className="text-xs">Käänny: {d.turn}</span>
+        <span className="text-xs">Kaarto: {d.turn}</span>
         <span className="text-xs text-muted-foreground">|</span>
         <span className="text-xs">Pudotus: {d.fade}</span>
       </div>
-      <p className="text-xs mt-1 text-muted-foreground">{getCategoryLabel(d.category)}</p>
+      <div className="mt-1">
+        <StabilityBadge stability={d.stability} />
+      </div>
     </div>
   );
 }
 
 // ==========================================
-// Gap analysis logic
+// Gap analysis logic — uses stability field from API
 // ==========================================
 function analyzeGaps(discs: BagDisc[]): GapReport[] {
   const reports: GapReport[] = [];
@@ -195,24 +201,23 @@ function analyzeGaps(discs: BagDisc[]): GapReport[] {
       continue;
     }
 
-    // Check stability coverage
-    const hasUnderstable = catDiscs.some((d) => d.turn <= -2);
-    const hasStable = catDiscs.some((d) => d.turn > -2 && d.turn < 1);
-    const hasOverstable = catDiscs.some((d) => d.turn >= 1 || d.fade >= 3);
+    // Check stability coverage using the stability field from the API
+    const hasUnderstable = catDiscs.some((d) => d.stability.includes('Understable'));
+    const hasStable = catDiscs.some((d) => d.stability === 'Stable');
+    const hasOverstable = catDiscs.some((d) => d.stability.includes('Overstable'));
 
     if (!hasUnderstable) {
       gaps.push({
-        description: `Ei alikiekkoja ${getCategoryLabel(cat).toLowerCase()}`,
-        severity: 'high',
+        description: `Ei alivakaata ${getCategorySingular(cat)}`,
+        severity: cat === 'Putter' ? 'high' : 'medium',
         suggestedStability: 'Understable',
         existingCount: catDiscs.length,
       });
     }
 
     if (!hasOverstable) {
-      const label = cat.includes('Driver') ? 'kaukokiekkoa' : cat === 'Midrange' ? 'midaria' : 'putteria';
       gaps.push({
-        description: `Ei ylivakaata ${label}`,
+        description: `Ei ylivakaata ${getCategorySingular(cat)}`,
         severity: cat.includes('Distance') ? 'high' : 'medium',
         suggestedStability: 'Overstable',
         existingCount: catDiscs.length,
@@ -222,7 +227,7 @@ function analyzeGaps(discs: BagDisc[]): GapReport[] {
     // Check for only one disc in critical categories
     if (cat === 'Putter' && catDiscs.length === 1) {
       gaps.push({
-        description: 'Vain yksi putteri',
+        description: 'Vain yksi putti',
         severity: 'medium',
         suggestedStability: 'Stable',
         existingCount: 1,
@@ -250,9 +255,9 @@ function getSeverityColor(severity: string) {
 }
 
 function getSeverityLabel(severity: string) {
-  if (severity === 'high') return 'Korkea prioriteetti';
-  if (severity === 'medium') return 'Keskitason prioriteetti';
-  return 'Matala prioriteetti';
+  if (severity === 'high') return 'Korkea';
+  if (severity === 'medium') return 'Keskitaso';
+  return 'Matala';
 }
 
 // ==========================================
@@ -390,6 +395,21 @@ function BagTab({
                     layout
                   >
                     <div className="group flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+                      {/* Flight path thumbnail */}
+                      {disc.pic ? (
+                        <div className="size-10 rounded-md overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                          <img
+                            src={disc.pic}
+                            alt={`${disc.name} lento`}
+                            className="w-full h-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                      ) : (
+                        <div className="size-10 rounded-md bg-muted shrink-0 flex items-center justify-center">
+                          <Disc3 className="size-5 text-muted-foreground/50" />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-sm truncate">{disc.name}</p>
@@ -400,7 +420,7 @@ function BagTab({
                           <div className="flex items-center gap-0.5">
                             <FlightPill value={disc.speed} label="Nopeus" />
                             <FlightPill value={disc.glide} label="Liito" />
-                            <FlightPill value={disc.turn} label="Käänny" />
+                            <FlightPill value={disc.turn} label="Kaarto" />
                             <FlightPill value={disc.fade} label="Pudotus" />
                           </div>
                         </div>
@@ -582,6 +602,21 @@ function SearchTab({
                     <Card className="overflow-hidden">
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
+                          {/* Flight path image */}
+                          {disc.pic ? (
+                            <div className="size-12 rounded-md overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                              <img
+                                src={disc.pic}
+                                alt={`${disc.name} lento`}
+                                className="w-full h-full object-contain"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : (
+                            <div className="size-12 rounded-md bg-muted shrink-0 flex items-center justify-center">
+                              <Disc3 className="size-6 text-muted-foreground/50" />
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium text-sm truncate">{disc.name}</p>
@@ -605,7 +640,7 @@ function SearchTab({
                                 />
                                 <FlightPill
                                   value={parseInt(disc.turn) || 0}
-                                  label="Käänny"
+                                  label="Kaarto"
                                 />
                                 <FlightPill
                                   value={parseInt(disc.fade) || 0}
@@ -655,10 +690,16 @@ function SearchTab({
   );
 }
 
+// ==========================================
+// Enhanced Flight Tab with disc detail cards
+// ==========================================
 function FlightTab({ discs }: { discs: BagDisc[] }) {
+  const [selectedDisc, setSelectedDisc] = useState<BagDisc | null>(null);
+
   const chartData = useMemo(
     () =>
       discs.map((d) => ({
+        id: d.discId,
         name: d.name,
         brand: d.brand,
         speed: d.speed,
@@ -667,6 +708,7 @@ function FlightTab({ discs }: { discs: BagDisc[] }) {
         fade: d.fade,
         category: d.category,
         stability: d.stability,
+        pic: d.pic,
       })),
     [discs]
   );
@@ -688,59 +730,198 @@ function FlightTab({ discs }: { discs: BagDisc[] }) {
   }
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground text-center">
-        Vaaka: Käänny (alikas vasemmalla, ylivakaa oikealla) · Pysty: Nopeus
-      </p>
-      <div className="w-full h-[400px] sm:h-[500px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis
-              type="number"
-              dataKey="turn"
-              name="Käänny"
-              domain={[-5, 2]}
-              ticks={[-5, -4, -3, -2, -1, 0, 1]}
-              reversed
-              label={{ value: 'Käänny', position: 'bottom', offset: 5, className: 'text-xs fill-muted-foreground' }}
-              tick={{ fontSize: 11 }}
-            />
-            <YAxis
-              type="number"
-              dataKey="speed"
-              name="Nopeus"
-              domain={[1, 15]}
-              ticks={[1, 3, 5, 7, 9, 11, 13, 15]}
-              label={{ value: 'Nopeus', angle: -90, position: 'insideLeft', offset: 10, className: 'text-xs fill-muted-foreground' }}
-              tick={{ fontSize: 11 }}
-            />
-            <ZAxis type="number" range={[60, 200]} />
-            <Tooltip content={<FlightChartTooltip />} />
-            {categoriesInBag.map((cat) => (
-              <Scatter
-                key={cat}
-                name={getCategoryLabel(cat)}
-                data={chartData.filter((d) => d.category === cat)}
-                fill={CATEGORY_COLORS[cat] || '#8884d8'}
-                opacity={0.8}
+    <div className="space-y-4">
+      {/* Scatter chart */}
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground text-center">
+          Vaaka: Kaarto (alivakaa vasemmalla, ylivakaa oikealla) · Pysty: Nopeus
+        </p>
+        <div className="w-full h-[300px] sm:h-[400px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis
+                type="number"
+                dataKey="turn"
+                name="Kaarto"
+                domain={[-5, 2]}
+                ticks={[-5, -4, -3, -2, -1, 0, 1]}
+                reversed
+                label={{ value: 'Kaarto', position: 'bottom', offset: 5, className: 'text-xs fill-muted-foreground' }}
+                tick={{ fontSize: 11 }}
               />
-            ))}
-          </ScatterChart>
-        </ResponsiveContainer>
+              <YAxis
+                type="number"
+                dataKey="speed"
+                name="Nopeus"
+                domain={[1, 15]}
+                ticks={[1, 3, 5, 7, 9, 11, 13, 15]}
+                label={{ value: 'Nopeus', angle: -90, position: 'insideLeft', offset: 10, className: 'text-xs fill-muted-foreground' }}
+                tick={{ fontSize: 11 }}
+              />
+              <ZAxis type="number" range={[60, 200]} />
+              <Tooltip content={<FlightChartTooltip />} />
+              {categoriesInBag.map((cat) => (
+                <Scatter
+                  key={cat}
+                  name={getCategoryLabel(cat)}
+                  data={chartData.filter((d) => d.category === cat)}
+                  fill={CATEGORY_COLORS[cat] || '#8884d8'}
+                  opacity={0.8}
+                  onClick={(data) => {
+                    const disc = discs.find(d => d.discId === data.id);
+                    if (disc) setSelectedDisc(disc);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+              ))}
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center justify-center gap-4 flex-wrap">
+          {categoriesInBag.map((cat) => (
+            <div key={cat} className="flex items-center gap-1.5">
+              <span
+                className="size-3 rounded-full"
+                style={{ backgroundColor: CATEGORY_COLORS[cat] }}
+              />
+              <span className="text-xs text-muted-foreground">{getCategoryLabel(cat)}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center justify-center gap-4 flex-wrap">
-        {categoriesInBag.map((cat) => (
-          <div key={cat} className="flex items-center gap-1.5">
-            <span
-              className="size-3 rounded-full"
-              style={{ backgroundColor: CATEGORY_COLORS[cat] }}
-            />
-            <span className="text-xs text-muted-foreground">{getCategoryLabel(cat)}</span>
-          </div>
-        ))}
+      {/* Selected disc detail */}
+      {selectedDisc && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+        >
+          <Card className="overflow-hidden">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-4">
+                {/* Flight path image */}
+                {selectedDisc.pic ? (
+                  <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-lg overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                    <img
+                      src={selectedDisc.pic}
+                      alt={`${selectedDisc.name} lentokuva`}
+                      className="w-full h-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-lg bg-muted shrink-0 flex items-center justify-center">
+                    <Disc3 className="size-10 text-muted-foreground/30" />
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-base">{selectedDisc.name}</h4>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 text-muted-foreground"
+                      onClick={() => setSelectedDisc(null)}
+                    >
+                      <X className="size-3" />
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{selectedDisc.brand}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge
+                      variant="secondary"
+                      className={`text-xs ${CATEGORY_BG[selectedDisc.category] || 'bg-muted'}`}
+                    >
+                      {getCategoryLabel(selectedDisc.category)}
+                    </Badge>
+                    <StabilityBadge stability={selectedDisc.stability} />
+                  </div>
+
+                  {/* Flight numbers */}
+                  <div className="grid grid-cols-4 gap-2 mt-3">
+                    <div className="text-center">
+                      <p className="text-lg font-bold">{selectedDisc.speed}</p>
+                      <p className="text-[10px] text-muted-foreground">Nopeus</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold">{selectedDisc.glide}</p>
+                      <p className="text-[10px] text-muted-foreground">Liito</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold">{selectedDisc.turn}</p>
+                      <p className="text-[10px] text-muted-foreground">Kaarto</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold">{selectedDisc.fade}</p>
+                      <p className="text-[10px] text-muted-foreground">Pudotus</p>
+                    </div>
+                  </div>
+
+                  {/* Link to Marshall Street */}
+                  {selectedDisc.link && (
+                    <a
+                      href={selectedDisc.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 mt-2 hover:underline"
+                    >
+                      <ExternalLink className="size-3" />
+                      Marshall Street
+                    </a>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Disc grid with flight path images */}
+      <div>
+        <h4 className="text-sm font-medium mb-3">Kiekkojen lentoprofiilit</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {discs
+            .sort((a, b) => {
+              const ai = CATEGORY_ORDER.indexOf(a.category);
+              const bi = CATEGORY_ORDER.indexOf(b.category);
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+            })
+            .map((disc) => (
+            <motion.div
+              key={disc.id}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.02 }}
+              className={`cursor-pointer rounded-lg border p-2 transition-colors ${selectedDisc?.id === disc.id ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 ring-1 ring-emerald-500/30' : 'bg-card hover:bg-muted/30'}`}
+              onClick={() => setSelectedDisc(selectedDisc?.id === disc.id ? null : disc)}
+            >
+              {/* Flight path thumbnail */}
+              <div className="aspect-[4/3] rounded-md overflow-hidden bg-muted mb-2 flex items-center justify-center">
+                {disc.pic ? (
+                  <img
+                    src={disc.pic}
+                    alt={`${disc.name} lentokuva`}
+                    className="w-full h-full object-contain"
+                    loading="lazy"
+                  />
+                ) : (
+                  <Disc3 className="size-8 text-muted-foreground/30" />
+                )}
+              </div>
+              <p className="text-xs font-medium truncate">{disc.name}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{disc.brand}</p>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-[10px] font-mono">{disc.speed}/{disc.glide}/{disc.turn}/{disc.fade}</span>
+                <StabilityBadge stability={disc.stability} />
+              </div>
+            </motion.div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -808,7 +989,7 @@ function GapsTab({ discs }: { discs: BagDisc[] }) {
                             <p className="text-sm font-medium">{gap.description}</p>
                             {gap.suggestedStability && (
                               <p className="text-xs mt-0.5 opacity-80">
-                                Suositus: {gap.suggestedStability} kiekko
+                                Suositus: {getStabilityLabel(gap.suggestedStability)} kiekko
                               </p>
                             )}
                           </div>
@@ -837,6 +1018,9 @@ function GapsTab({ discs }: { discs: BagDisc[] }) {
               {CATEGORY_ORDER.map((cat) => {
                 const count = discs.filter((d) => d.category === cat).length;
                 if (count === 0) return null;
+                const catDiscs = discs.filter((d) => d.category === cat);
+                const hasUnderstable = catDiscs.some((d) => d.stability.includes('Understable'));
+                const hasOverstable = catDiscs.some((d) => d.stability.includes('Overstable'));
                 return (
                   <div
                     key={cat}
@@ -845,7 +1029,11 @@ function GapsTab({ discs }: { discs: BagDisc[] }) {
                     <span className="text-sm">{getCategoryIcon(cat)}</span>
                     <div>
                       <p className="text-xs font-medium">{getCategoryLabel(cat)}</p>
-                      <p className="text-[10px] opacity-80">{count} kiekko{count !== 1 ? 'a' : ''}</p>
+                      <p className="text-[10px] opacity-80">
+                        {count} kiekko{count !== 1 ? 'a' : ''}
+                        {!hasUnderstable && ' · ⚠️ Ei aliv.'}
+                        {!hasOverstable && ' · ⚠️ Ei yliv.'}
+                      </p>
                     </div>
                   </div>
                 );
@@ -896,6 +1084,8 @@ export function MyBagView() {
           turn: parseInt(disc.turn) || 0,
           fade: parseInt(disc.fade) || 0,
           stability: disc.stability,
+          pic: disc.pic || undefined,
+          link: disc.link || undefined,
         },
         {
           onSuccess: () => {
@@ -982,18 +1172,15 @@ export function MyBagView() {
         <TabsList className="w-full grid grid-cols-4">
           <TabsTrigger value="bag" className="text-xs gap-1">
             <span>🎒</span>
-            <span className="hidden sm:inline">Laukku</span>
-            <span className="sm:hidden">Laukku</span>
+            <span>Laukku</span>
           </TabsTrigger>
           <TabsTrigger value="search" className="text-xs gap-1">
             <span>🔍</span>
-            <span className="hidden sm:inline">Hae</span>
-            <span className="sm:hidden">Hae</span>
+            <span>Hae</span>
           </TabsTrigger>
           <TabsTrigger value="flight" className="text-xs gap-1">
             <span>📊</span>
-            <span className="hidden sm:inline">Lento</span>
-            <span className="sm:hidden">Lento</span>
+            <span>Lento</span>
           </TabsTrigger>
           <TabsTrigger value="gaps" className="text-xs gap-1">
             <span>📋</span>

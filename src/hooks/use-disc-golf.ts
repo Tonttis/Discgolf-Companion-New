@@ -321,7 +321,7 @@ export function useAddDiscToBag() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: { bagId: string; discId: string; name: string; brand: string; category: string; speed: number; glide: number; turn: number; fade: number; stability: string }) => {
+    mutationFn: async (data: { bagId: string; discId: string; name: string; brand: string; category: string; speed: number; glide: number; turn: number; fade: number; stability: string; pic?: string; link?: string }) => {
       const response = await fetch('/api/bag/discs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
