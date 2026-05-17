@@ -135,3 +135,35 @@ Stage Summary:
 - Courses display immediately from local DB without waiting for sync
 - Sync runs in background; manual refresh available via "Päivitä" button
 - Partial data (28 courses) shown immediately with "Osittainen — päivitä" badge
+
+---
+Task ID: 6
+Agent: Main
+Task: Redesign ActiveGameView layout — desktop image left/scores right, mobile image 2/3 + swipe collapse, +/- scoring format
+
+Work Log:
+- Completely rewrote `src/components/disc-golf/ActiveGameView.tsx` with new layout architecture
+- **Desktop layout (md+)**: Image on left (fills available space), score input panel on right (w-80/w-96 card)
+  - Image section with par/length overlay at bottom, gradient overlay for readability
+  - No-image fallback: card with Flag icon, hole name, par, length info
+  - Right panel: par/length header, player score rows, action buttons
+- **Mobile layout (<md)**: Image takes ~50-55vh (approximately 2/3 of screen)
+  - Swipe up on image collapses it to a compact bar at top (small thumbnail + hole info + chevron down)
+  - Tap collapsed bar to expand image again
+  - Image collapse resets automatically when navigating to new hole
+  - No-image fallback: compact card with flag icon, par, length
+- **Player Score Row (PlayerName + (score) -)**: Replaced old big centered counter with compact row layout
+  - Player avatar + name on left
+  - Score name (Birdie/Par/Bogey) under player name
+  - Relative par badge (E, +1, -2)
+  - Minus button, score display, Plus button on right side
+  - Saving/saved indicator icons
+- Cleaned up unused imports: `useAuth`, `useMotionValue`, `useTransform`, `useAnimation`, `ImageIcon`
+- Cleaned up unused variables: `user`, `selectedCourse`, `courseSlug`
+- Lint passes clean, dev server compiles without errors
+
+Stage Summary:
+- Desktop: Split layout with large image on left, scoring panel on right
+- Mobile: Full image with swipe-to-collapse, scoring below
+- Both: Compact player rows with `Player - (score) +` format
+- No-image case handled gracefully on both desktop and mobile
