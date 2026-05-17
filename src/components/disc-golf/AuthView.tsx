@@ -587,7 +587,6 @@ export function AuthView() {
       {/* Info footer */}
       <p className="text-center text-xs text-muted-foreground leading-relaxed px-4">
         Tilin luomalla hyväksyt, että pelit ja suosikit tallennetaan palvelullemme.
-        Voit aina poistaa tilisi asetuksista.
       </p>
     </div>
   );
