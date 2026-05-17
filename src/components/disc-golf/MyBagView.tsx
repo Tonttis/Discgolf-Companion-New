@@ -48,6 +48,7 @@ import {
   Disc3,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useBag,
   useDiscSearch,
@@ -186,7 +187,7 @@ function analyzeGaps(discs: BagDisc[]): GapReport[] {
     // Check for no discs in category
     if (catDiscs.length === 0) {
       gaps.push({
-        description: `Ei ${getCategoryLabel(cat).toLowerCase()} laukussasi`,
+        description: `Laukustasi puuttuu ${getCategoryLabel(cat).toLowerCase()}`,
         severity: cat === 'Putter' || cat === 'Midrange' ? 'high' : 'medium',
         existingCount: 0,
       });
@@ -249,9 +250,9 @@ function getSeverityColor(severity: string) {
 }
 
 function getSeverityLabel(severity: string) {
-  if (severity === 'high') return 'Korkea';
-  if (severity === 'medium') return 'Keskitaso';
-  return 'Matala';
+  if (severity === 'high') return 'Korkea prioriteetti';
+  if (severity === 'medium') return 'Keskitason prioriteetti';
+  return 'Matala prioriteetti';
 }
 
 // ==========================================
@@ -772,10 +773,10 @@ function GapsTab({ discs }: { discs: BagDisc[] }) {
             <AlertTriangle className="size-5 text-orange-600 dark:text-orange-400 shrink-0" />
             <div>
               <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
-                {allGaps.length} aukko{allGaps.length !== 1 ? 'a' : ''} havaittu
+                {allGaps.length} puutetta havaittu
               </p>
               <p className="text-xs text-orange-700 dark:text-orange-400">
-                Tarkista alla olevat suositukset laukkusi tasapainottamiseksi
+                Tarkista alla olevat suositukset tasapainottaaksesi kiekkovalikoimaasi
               </p>
             </div>
           </div>
@@ -869,15 +870,18 @@ export function MyBagView() {
   const addDisc = useAddDiscToBag();
   const removeDisc = useRemoveDiscFromBag();
 
+  const queryClient = useQueryClient();
+
   const bag = bagData?.bags?.[0] ?? null;
   const discs = bag?.discs ?? [];
   const bagName = bag?.name ?? 'Minun laukkuni';
-  const needsMigration = bagError && (bagError as Error & { status?: number })?.message?.includes('not created');
 
   const handleAddDisc = useCallback(
     (disc: Disc) => {
+      // If bag doesn't exist yet, refetch to trigger auto-create on server, then try again
       if (!bag?.id) {
-        toast.error('Laukkua ei löydy');
+        queryClient.invalidateQueries({ queryKey: ['bag'] });
+        toast.error('Laukkua ei löydy', { description: 'Yritä uudelleen hetken kuluttua' });
         return;
       }
       addDisc.mutate(
@@ -907,7 +911,7 @@ export function MyBagView() {
         }
       );
     },
-    [addDisc, bag]
+    [addDisc, bag, queryClient]
   );
 
   const handleRemoveDisc = useCallback(
@@ -956,44 +960,6 @@ export function MyBagView() {
     );
   }
 
-  // Migration needed state
-  if (needsMigration) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center justify-center py-16 px-4 text-center space-y-4"
-      >
-        <div className="flex items-center justify-center size-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 mb-2">
-          <Backpack className="size-8 text-amber-600 dark:text-amber-400" />
-        </div>
-        <h3 className="text-lg font-semibold">Laukkutaulut puuttuvat</h3>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Kiekkolaukun tietokantataulut pitää luoda ensin. Suorita SQL-komennot Supabasen SQL-editorissa.
-        </p>
-        <Button
-          onClick={() => {
-            fetch('/api/setup')
-              .then(r => r.json())
-              .then(data => {
-                if (data.bagMigrationSql) {
-                  navigator.clipboard.writeText(data.bagMigrationSql);
-                  toast.success('SQL kopioitu leikepöydälle!', {
-                    description: 'Liitä se Supabasen SQL-editoriin',
-                  });
-                } else {
-                  toast.info('Tarkista tietokannan tila Asetukset-sivulta');
-                }
-              });
-          }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          Kopioi SQL leikepöydälle
-        </Button>
-      </motion.div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {/* Page header */}
@@ -1031,8 +997,7 @@ export function MyBagView() {
           </TabsTrigger>
           <TabsTrigger value="gaps" className="text-xs gap-1">
             <span>📋</span>
-            <span className="hidden sm:inline">Aukot</span>
-            <span className="sm:hidden">Aukot</span>
+            <span>Puutteet</span>
           </TabsTrigger>
         </TabsList>
 

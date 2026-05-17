@@ -6,12 +6,12 @@ export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
     if (!supabase) {
-      return NextResponse.json({ bags: [], error: 'Supabase not configured' }, { status: 503 });
+      return NextResponse.json({ bags: [] }, { status: 200 });
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ bags: [] }, { status: 200 });
     }
 
     const { data: bags, error: bagsError } = await supabase

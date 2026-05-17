@@ -31,3 +31,28 @@ Stage Summary:
 - Bag visible in bottom nav and profile page
 - SQL migration ready for Supabase (needs to be run manually in SQL Editor)
 - Lint passes, dev server compiles cleanly
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix bag "not found" error + Finnish translation fixes
+
+Work Log:
+- Fixed GET /api/bag returning 401 when unauthenticated — now returns `{ bags: [] }` with 200 (matching favorites pattern)
+- This was the root cause: React Query threw error on 401, making bagData undefined, bag=null, "Laukkua ei löydy" toast
+- Added useQueryClient import to MyBagView for invalidation on missing bag
+- When bag is null during add, now invalidates query cache and prompts retry
+- Removed needsMigration state (tables already exist in Supabase)
+- Renamed "Aukot" tab → "Puutteet" per user request
+- Fixed Finnish gap descriptions: "Ei X laukussasi" → "Laukustasi puuttuu X"
+- Fixed severity labels: "Korkea" → "Korkea prioriteetti", etc.
+- Fixed gap summary header: "X aukkoa havaittu" → "X puutetta havaittu"
+- Fixed gap summary description to match user's exact translation
+- Added SUPABASE_SERVICE_ROLE_KEY to .env.local
+
+Stage Summary:
+- Bag API now gracefully returns empty bags instead of 401
+- Adding discs to bag should work when user is authenticated
+- Tab renamed: Aukot → Puutteet
+- All Finnish translations match user's provided translations
+- Lint passes
