@@ -57,8 +57,24 @@ export function AppShell() {
 
   // Push state whenever view changes, so back button can be intercepted
   useEffect(() => {
-    window.history.pushState(null, '');
-  }, [currentView]);
+    // Seed one history state once
+    if (!window.history.state?.appShell) {
+      window.history.replaceState({ appShell: true }, '');
+    }
+  
+    const handlePopState = () => {
+      const { viewHistory, goBack, navigateToHome } = useAppStore.getState();
+  
+      if (viewHistory.length > 0) {
+        goBack();
+      } else {
+        navigateToHome();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Hide bottom nav during active game for more screen space
   const hideBottomNav = currentView === 'active-game';
