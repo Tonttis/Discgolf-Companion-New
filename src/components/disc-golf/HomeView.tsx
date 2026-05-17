@@ -748,49 +748,6 @@ export function HomeView() {
           </div>
         </div>
       </section>
-
-      {/* Hosting Guides */}
-      <section className="rounded-xl border bg-card p-4 sm:p-6 space-y-3">
-        <h2 className="font-semibold text-base sm:text-lg flex items-center gap-2">
-          <Server className="size-5 text-emerald-600 dark:text-emerald-400" />
-          Asennusohjeet
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Asenna DiscGolf Companion omalle palvelimelle tai tietokoneelle.
-        </p>
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-          <a
-            href="/api/hosting-guide?platform=windows"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-          >
-            <div className="flex items-center justify-center size-9 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 shrink-0">
-              <Server className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Windows</p>
-              <p className="text-xs text-muted-foreground">Bun/Node.js + NSSM</p>
-            </div>
-            <ExternalLink className="size-3.5 text-muted-foreground shrink-0 ml-auto" />
-          </a>
-          <a
-            href="/api/hosting-guide?platform=linux"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-          >
-            <div className="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 shrink-0">
-              <Server className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Linux</p>
-              <p className="text-xs text-muted-foreground">systemd + Nginx + SSL</p>
-            </div>
-            <ExternalLink className="size-3.5 text-muted-foreground shrink-0 ml-auto" />
-          </a>
-        </div>
-      </section>
     </div>
   );
 }
