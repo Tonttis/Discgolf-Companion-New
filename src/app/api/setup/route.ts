@@ -1,64 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// The fix SQL for existing installations that are missing the INSERT policy and have a broken trigger
-const FIX_SQL = `-- Fix: Add missing INSERT policy on profiles and update trigger
--- Run this in your Supabase SQL Editor if registration doesn't work
+// The fix SQL for existing installations that have RLS recursion issues
+const FIX_SQL = `-- Fix: Infinite recursion in RLS policies for game_players
+-- Run this in your Supabase SQL Editor if game creation fails with error 42P17
 
--- 1. Add the missing INSERT policy so users can create their own profiles
-DO $$ BEGIN
-  CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- 1. Drop existing problematic policies
+DROP POLICY IF EXISTS "Games viewable by players" ON games;
+DROP POLICY IF EXISTS "Authenticated users can create games" ON games;
+DROP POLICY IF EXISTS "Game creator can update games" ON games;
+DROP POLICY IF EXISTS "Game players viewable by game participants" ON game_players;
+DROP POLICY IF EXISTS "Game creator can add players" ON game_players;
+DROP POLICY IF EXISTS "Scores viewable by game participants" ON scores;
+DROP POLICY IF EXISTS "Players can insert own scores" ON scores;
+DROP POLICY IF EXISTS "Players can update own scores" ON scores;
 
--- 2. Update the trigger function to handle special characters in emails
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-DECLARE
-  base_username TEXT;
-  clean_username TEXT;
-  final_username TEXT;
-  counter INT := 0;
+-- 2. Create SECURITY DEFINER helper functions (bypass RLS, break recursion)
+CREATE OR REPLACE FUNCTION is_game_participant(game_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  -- Extract the part before @ from email
-  base_username := LOWER(SPLIT_PART(NEW.email, '@', 1));
-
-  -- Remove any character that isn't a-z, 0-9, or underscore
-  clean_username := REGEXP_REPLACE(base_username, '[^a-z0-9_]', '', 'g');
-
-  -- If the cleaned username is too short, use 'user' as base
-  IF LENGTH(clean_username) < 3 THEN
-    clean_username := 'user';
-  END IF;
-
-  -- Truncate to 20 chars
-  clean_username := SUBSTRING(clean_username FROM 1 FOR 20);
-
-  -- Check if username is taken, append number if needed
-  final_username := clean_username;
-  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
-    counter := counter + 1;
-    final_username := SUBSTRING(clean_username FROM 1 FOR (20 - LENGTH(counter::TEXT))) || counter::TEXT;
-    IF counter > 999 THEN
-      final_username := SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 20);
-      EXIT;
-    END IF;
-  END LOOP;
-
-  INSERT INTO public.profiles (id, username, display_name)
-  VALUES (
-    NEW.id,
-    final_username,
-    COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
-  );
-  RETURN NEW;
+  RETURN EXISTS (SELECT 1 FROM game_players WHERE game_id = game_uuid AND user_id = auth.uid());
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- Recreate the trigger
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE OR REPLACE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+CREATE OR REPLACE FUNCTION is_game_creator(game_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM games WHERE id = game_uuid AND created_by = auth.uid());
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION is_own_player_record(player_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM game_players WHERE id = player_uuid AND user_id = auth.uid());
+END;
+$$;
+
+-- 3. Recreate policies using helper functions
+CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
+  created_by = auth.uid() OR is_game_participant(id)
+);
+CREATE POLICY "Authenticated users can create games" ON games FOR INSERT WITH CHECK (auth.uid() = created_by);
+CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (
+  created_by = auth.uid() OR is_game_participant(id)
+);
+CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
+  is_game_creator(game_id) OR is_game_participant(game_id) OR user_id = auth.uid()
+);
+CREATE POLICY "Game creator can add players" ON game_players FOR INSERT WITH CHECK (
+  is_game_creator(game_id) OR user_id = auth.uid()
+);
+CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
+  is_game_creator(game_id) OR is_game_participant(game_id)
+);
+CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (
+  auth.uid() IS NOT NULL AND is_own_player_record(player_id)
+);
+CREATE POLICY "Players can update own scores" ON scores FOR UPDATE USING (
+  is_own_player_record(player_id)
+);
 `;
 
 const MIGRATION_SQL = `-- ============================================
@@ -162,6 +162,32 @@ CREATE TABLE IF NOT EXISTS scores (
 -- ============================================
 -- Row Level Security (RLS)
 -- ============================================
+-- NOTE: We use SECURITY DEFINER helper functions
+-- to avoid infinite recursion between games ↔
+-- game_players policies (Supabase error 42P17).
+-- ============================================
+
+-- Helper functions (bypass RLS via SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION is_game_participant(game_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM game_players WHERE game_id = game_uuid AND user_id = auth.uid());
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION is_game_creator(game_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM games WHERE id = game_uuid AND created_by = auth.uid());
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION is_own_player_record(player_uuid UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM game_players WHERE id = player_uuid AND user_id = auth.uid());
+END;
+$$;
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
@@ -194,8 +220,7 @@ END $$;
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
-    EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid())
-    OR created_by = auth.uid()
+    created_by = auth.uid() OR is_game_participant(id)
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -204,20 +229,22 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid()));
+  CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (
+    created_by = auth.uid() OR is_game_participant(id)
+  );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
-    EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = game_players.game_id AND gp.user_id = auth.uid())))
+    is_game_creator(game_id) OR is_game_participant(game_id) OR user_id = auth.uid()
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   CREATE POLICY "Game creator can add players" ON game_players FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND created_by = auth.uid())
+    is_game_creator(game_id) OR user_id = auth.uid()
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -225,17 +252,19 @@ END $$;
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
-    EXISTS (SELECT 1 FROM games WHERE id = scores.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = scores.game_id AND user_id = auth.uid())))
+    is_game_creator(game_id) OR is_game_participant(game_id)
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+  CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (
+    auth.uid() IS NOT NULL AND is_own_player_record(player_id)
+  );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   CREATE POLICY "Players can update own scores" ON scores FOR UPDATE USING (
-    EXISTS (SELECT 1 FROM game_players WHERE id = scores.player_id AND user_id = auth.uid())
+    is_own_player_record(player_id)
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;

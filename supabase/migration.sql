@@ -109,6 +109,55 @@ CREATE TABLE IF NOT EXISTS scores (
 -- ============================================
 -- Row Level Security (RLS)
 -- ============================================
+-- NOTE: We use SECURITY DEFINER helper functions
+-- to avoid infinite recursion between games ↔
+-- game_players policies (Supabase error 42P17).
+-- ============================================
+
+-- Helper: Check if the current user is a participant in a game
+-- (bypasses RLS via SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION is_game_participant(game_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM game_players
+    WHERE game_id = game_uuid AND user_id = auth.uid()
+  );
+END;
+$$;
+
+-- Helper: Check if the current user created a game
+-- (bypasses RLS via SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION is_game_creator(game_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM games
+    WHERE id = game_uuid AND created_by = auth.uid()
+  );
+END;
+$$;
+
+-- Helper: Check if a player record belongs to the current user
+-- (bypasses RLS via SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION is_own_player_record(player_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM game_players
+    WHERE id = player_uuid AND user_id = auth.uid()
+  );
+END;
+$$;
 
 -- Profiles: anyone can read, users can insert/update their own
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -122,34 +171,42 @@ CREATE POLICY "Users can read own favorites" ON favorites FOR SELECT USING (auth
 CREATE POLICY "Users can insert own favorites" ON favorites FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete own favorites" ON favorites FOR DELETE USING (auth.uid() = user_id);
 
--- Games: readable by game players, creatable by authenticated users
+-- Games: readable by creator or game participants (using helper function to avoid recursion)
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
-  EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid())
-  OR created_by = auth.uid()
+  created_by = auth.uid()
+  OR is_game_participant(id)
 );
 CREATE POLICY "Authenticated users can create games" ON games FOR INSERT WITH CHECK (auth.uid() = created_by);
-CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid()));
+CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (
+  created_by = auth.uid()
+  OR is_game_participant(id)
+);
 
--- Game players: readable by game participants
+-- Game players: readable by game creator or participants (using helper functions to avoid recursion)
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
-  EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = game_players.game_id AND gp.user_id = auth.uid())))
+  is_game_creator(game_id)
+  OR is_game_participant(game_id)
+  OR user_id = auth.uid()
 );
 CREATE POLICY "Game creator can add players" ON game_players FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND created_by = auth.uid())
+  is_game_creator(game_id)
+  OR user_id = auth.uid()
 );
 
--- Scores: readable by game participants, writable by the player themselves or game creator
+-- Scores: readable by game participants (using helper functions to avoid recursion)
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
-  EXISTS (SELECT 1 FROM games WHERE id = scores.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = scores.game_id AND user_id = auth.uid())))
+  is_game_creator(game_id)
+  OR is_game_participant(game_id)
 );
 CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (
   auth.uid() IS NOT NULL
+  AND is_own_player_record(player_id)
 );
 CREATE POLICY "Players can update own scores" ON scores FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM game_players WHERE id = scores.player_id AND user_id = auth.uid())
+  is_own_player_record(player_id)
 );
 
 -- ============================================

@@ -77,3 +77,32 @@ Stage Summary:
 - Sync and course detail routes have fallback chain: scraper service → direct fetch → cached data
 - Middleware → proxy rename fixes Next.js 16 deprecation warning
 - `.env.local` recreated with Supabase credentials
+
+---
+Task ID: 4
+Agent: Main
+Task: Fix infinite recursion in game_players RLS policy (error 42P17) + Fix only 28 of 1080 courses shown
+
+Work Log:
+- **Issue 1 - RLS Infinite Recursion**: Diagnosed the root cause — `game_players` SELECT policy self-references through `games`, and `games` SELECT policy also references `game_players`, creating mutual recursion
+- Created `supabase/fix-rls-recursion.sql` — a standalone SQL script to fix existing installations by dropping old policies and recreating with SECURITY DEFINER helper functions
+- Created 3 helper functions: `is_game_participant()`, `is_game_creator()`, `is_own_player_record()` — all SECURITY DEFINER to bypass RLS and break the recursion cycle
+- Rewrote all RLS policies for `games`, `game_players`, and `scores` tables to use the helper functions instead of direct subqueries
+- Updated `supabase/migration.sql` with the fixed policies (for fresh installations)
+- Updated `/api/setup/route.ts` — both FIX_SQL and MIGRATION_SQL now use the non-recursive policies with helper functions
+- **Issue 2 - Only 28 Courses**: Root cause was the sync route returning "cached" when any courses exist and are < 6 hours old, even if only 28 of 1080 were synced (partial sync from a timeout or error)
+- Added `MIN_EXPECTED_COURSES = 100` threshold — if count < 100, always re-sync regardless of freshness
+- Added `?force=true` query parameter to `/api/sync` to force re-sync
+- Rewrote sync logic to use batch operations: `createMany()` for new courses (chunks of 100), parallel `update()` in chunks of 50 — instead of individual findUnique + create/update per course (2160 queries → ~22 queries)
+- Same batch optimization applied to `src/lib/scraper/frisbeegolfradat.ts` `syncCourseList()`
+- Added `useForceSync()` hook in `use-disc-golf.ts` for manual refresh
+- Added auto-detect: `useSync()` hook automatically triggers force re-sync if cached count < 100
+- Updated `CourseListView.tsx`: Added Finnish-language sync status, manual "Päivitä" (Refresh) button, and `useForceSync` integration
+- Verified lint passes clean
+
+Stage Summary:
+- **RLS fix**: Game creation will now work after running `supabase/fix-rls-recursion.sql` in SQL Editor
+- **Course sync fix**: All 1080 courses will now sync properly (batch operations + low-count re-sync + force option)
+- New SQL fix file: `supabase/fix-rls-recursion.sql` (for existing installations)
+- Updated `supabase/migration.sql` (for fresh installations)
+- User needs to run the fix SQL in Supabase SQL Editor to resolve the game_players recursion error

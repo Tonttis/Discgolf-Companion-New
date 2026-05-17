@@ -284,43 +284,59 @@ export async function scrapeCourseDetail(slug: string): Promise<CourseDetail> {
 
 export async function syncCourseList(): Promise<{ added: number; updated: number; total: number }> {
   const courses = await scrapeCourseList();
+
+  // Get all existing slugs in one query
+  const existingCourses = await db.course.findMany({
+    select: { slug: true },
+  });
+  const existingSlugSet = new Set(existingCourses.map(c => c.slug));
+
+  const toCreate = courses.filter(c => !existingSlugSet.has(c.slug));
+  const toUpdate = courses.filter(c => existingSlugSet.has(c.slug));
+
+  // Batch insert new courses (chunks of 100 for SQLite variable limit)
   let added = 0;
+  for (let i = 0; i < toCreate.length; i += 100) {
+    const chunk = toCreate.slice(i, i + 100);
+    const result = await db.course.createMany({
+      data: chunk.map(c => ({
+        slug: c.slug,
+        name: c.name,
+        city: c.city ?? '',
+        holes: c.holes ?? 0,
+        rating: c.rating,
+        classification: c.classification ?? '',
+        isTop: c.isTop ?? false,
+        isNew: c.isNew ?? false,
+        mapUrl: c.mapUrl,
+      })),
+      skipDuplicates: true,
+    });
+    added += result.count;
+  }
+
+  // Update existing courses in parallel chunks
   let updated = 0;
-
-  for (const course of courses) {
-    const existing = await db.course.findUnique({ where: { slug: course.slug } });
-
-    if (existing) {
-      await db.course.update({
-        where: { slug: course.slug },
-        data: {
-          name: course.name,
-          city: course.city,
-          holes: course.holes,
-          rating: course.rating,
-          classification: course.classification,
-          isTop: course.isTop,
-          isNew: course.isNew,
-          mapUrl: course.mapUrl,
-        },
-      });
-      updated++;
-    } else {
-      await db.course.create({
-        data: {
-          slug: course.slug,
-          name: course.name,
-          city: course.city,
-          holes: course.holes,
-          rating: course.rating,
-          classification: course.classification,
-          isTop: course.isTop,
-          isNew: course.isNew,
-          mapUrl: course.mapUrl,
-        },
-      });
-      added++;
-    }
+  for (let i = 0; i < toUpdate.length; i += 50) {
+    const chunk = toUpdate.slice(i, i + 50);
+    const results = await Promise.allSettled(
+      chunk.map(c =>
+        db.course.update({
+          where: { slug: c.slug },
+          data: {
+            name: c.name,
+            city: c.city,
+            holes: c.holes,
+            rating: c.rating,
+            classification: c.classification,
+            isTop: c.isTop,
+            isNew: c.isNew,
+            mapUrl: c.mapUrl,
+          },
+        })
+      )
+    );
+    updated += results.filter(r => r.status === 'fulfilled').length;
   }
 
   return { added, updated, total: courses.length };

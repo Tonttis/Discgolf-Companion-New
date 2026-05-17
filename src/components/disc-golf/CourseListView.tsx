@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Search, X, SlidersHorizontal, Building, Award, Sparkles, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useCourses, useSync } from '@/hooks/use-disc-golf';
+import { useCourses, useSync, useForceSync } from '@/hooks/use-disc-golf';
 import { CourseCard, CourseCardSkeleton } from './CourseCard';
 import { getClassificationLabel } from '@/lib/types';
 
@@ -40,6 +40,7 @@ export function CourseListView() {
 
   // Trigger sync on first load
   const sync = useSync();
+  const forceSync = useForceSync();
 
   // Reset page when filters change - use a key derived from filters
   const filterKey = `${selectedCity}-${selectedClassification}-${showTopOnly}-${showNewOnly}`;
@@ -79,16 +80,29 @@ export function CourseListView() {
       {sync.isLoading && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
           <RefreshCw className="size-3 animate-spin" />
-          Loading course data from Frisbeegolfradat.fi...
+          Ladataan ratoja Frisbeegolfradat.fi:stä...
         </div>
       )}
-      {sync.data && (
+      {sync.data && !sync.isLoading && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{sync.data.totalCourses ?? sync.data.total ?? 0} courses from Frisbeegolfradat.fi</span>
+          <span>{sync.data.totalCourses ?? sync.data.total ?? 0} rataa Frisbeegolfradat.fi:stä</span>
           {sync.data.status === 'synced' && (
             <Badge variant="outline" className="text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              Just synced
+              Synkronoitu
             </Badge>
+          )}
+          {forceSync.isPending ? (
+            <RefreshCw className="size-3 animate-spin ml-auto" />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 px-2 text-[10px]"
+              onClick={() => forceSync.mutate()}
+            >
+              <RefreshCw className="size-3 mr-1" />
+              Päivitä
+            </Button>
           )}
         </div>
       )}

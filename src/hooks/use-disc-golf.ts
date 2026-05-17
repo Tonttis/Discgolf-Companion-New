@@ -47,12 +47,39 @@ export function useSync() {
   return useQuery<SyncResponse>({
     queryKey: ['sync'],
     queryFn: async () => {
+      // Force re-sync if we have fewer than expected courses
       const response = await fetch('/api/sync');
       if (!response.ok) throw new Error('Failed to sync');
-      return response.json();
+      const data = await response.json();
+
+      // If cached but count is too low, force re-sync
+      if (data.status === 'cached' && (data.totalCourses ?? 0) < 100) {
+        const forceResponse = await fetch('/api/sync?force=true');
+        if (forceResponse.ok) {
+          return forceResponse.json();
+        }
+      }
+
+      return data;
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+  });
+}
+
+export function useForceSync() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/sync?force=true');
+      if (!response.ok) throw new Error('Failed to sync');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync'] });
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
   });
 }
 

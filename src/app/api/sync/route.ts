@@ -1,16 +1,21 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { syncCourseList } from '@/lib/scraper/frisbeegolfradat';
 
 const SCRAPER_PORT = 3030;
 const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
 
-export async function GET() {
+// Minimum expected course count — if we have fewer, always re-sync
+const MIN_EXPECTED_COURSES = 100;
+
+export async function GET(request: NextRequest) {
   try {
+    const forceSync = request.nextUrl.searchParams.get('force') === 'true';
+
     // Check if we already have courses in the DB
     const existingCount = await db.course.count();
 
-    if (existingCount > 0) {
+    if (!forceSync && existingCount >= MIN_EXPECTED_COURSES) {
       // If data is less than 6 hours old, return cached
       const newest = await db.course.findFirst({
         orderBy: { updatedAt: 'desc' },
@@ -29,6 +34,11 @@ export async function GET() {
       }
     }
 
+    // If we have partial data (count < MIN_EXPECTED), log a warning
+    if (existingCount > 0 && existingCount < MIN_EXPECTED_COURSES) {
+      console.warn(`Only ${existingCount} courses in DB (expected ~1080). Re-syncing...`);
+    }
+
     // Strategy 1: Try the scraper microservice
     try {
       const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`, {
@@ -39,52 +49,15 @@ export async function GET() {
         const scraperData = await scraperResponse.json();
 
         if (scraperData.success && scraperData.courses) {
-          let added = 0;
-          let updated = 0;
-
-          for (const course of scraperData.courses) {
-            const existing = await db.course.findUnique({ where: { slug: course.slug } });
-
-            if (existing) {
-              await db.course.update({
-                where: { slug: course.slug },
-                data: {
-                  name: course.name,
-                  city: course.city,
-                  holes: course.holes,
-                  rating: course.rating,
-                  classification: course.classification,
-                  isTop: course.isTop,
-                  isNew: course.isNew,
-                  mapUrl: course.mapUrl,
-                },
-              });
-              updated++;
-            } else {
-              await db.course.create({
-                data: {
-                  slug: course.slug,
-                  name: course.name,
-                  city: course.city,
-                  holes: course.holes,
-                  rating: course.rating,
-                  classification: course.classification,
-                  isTop: course.isTop,
-                  isNew: course.isNew,
-                  mapUrl: course.mapUrl,
-                },
-              });
-              added++;
-            }
-          }
+          const result = await batchSyncCourses(scraperData.courses);
 
           return NextResponse.json({
             status: 'synced',
             source: 'scraper-service',
             total: scraperData.courses.length,
-            added,
-            updated,
-            message: `Synced ${scraperData.courses.length} courses (${added} new, ${updated} updated)`,
+            added: result.added,
+            updated: result.updated,
+            message: `Synced ${scraperData.courses.length} courses (${result.added} new, ${result.updated} updated)`,
           });
         }
       }
@@ -122,4 +95,84 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Batch sync courses using createMany for new courses and
+ * individual updates for existing ones. Much faster than
+ * findUnique + create/update per course.
+ */
+async function batchSyncCourses(courses: Array<{
+  slug: string;
+  name: string;
+  city: string;
+  holes: number;
+  rating: number | null;
+  classification: string;
+  isTop: boolean;
+  isNew: boolean;
+  mapUrl: string | null;
+}>): Promise<{ added: number; updated: number }> {
+  // Get all existing slugs in one query
+  const existingCourses = await db.course.findMany({
+    select: { slug: true },
+  });
+  const existingSlugSet = new Set(existingCourses.map(c => c.slug));
+
+  const toCreate = courses.filter(c => !existingSlugSet.has(c.slug));
+  const toUpdate = courses.filter(c => existingSlugSet.has(c.slug));
+
+  // Batch insert new courses
+  let added = 0;
+  if (toCreate.length > 0) {
+    // SQLite has a max variable limit, so batch in chunks of 100
+    for (let i = 0; i < toCreate.length; i += 100) {
+      const chunk = toCreate.slice(i, i + 100);
+      const result = await db.course.createMany({
+        data: chunk.map(c => ({
+          slug: c.slug,
+          name: c.name,
+          city: c.city ?? '',
+          holes: c.holes ?? 0,
+          rating: c.rating,
+          classification: c.classification ?? '',
+          isTop: c.isTop ?? false,
+          isNew: c.isNew ?? false,
+          mapUrl: c.mapUrl,
+        })),
+        skipDuplicates: true,
+      });
+      added += result.count;
+    }
+  }
+
+  // Update existing courses individually (Prisma doesn't have batch update by different data)
+  // But we can do them in parallel with Promise.all
+  let updated = 0;
+  if (toUpdate.length > 0) {
+    // Process updates in chunks of 50 to avoid overwhelming the DB
+    for (let i = 0; i < toUpdate.length; i += 50) {
+      const chunk = toUpdate.slice(i, i + 50);
+      const results = await Promise.allSettled(
+        chunk.map(c =>
+          db.course.update({
+            where: { slug: c.slug },
+            data: {
+              name: c.name,
+              city: c.city,
+              holes: c.holes,
+              rating: c.rating,
+              classification: c.classification,
+              isTop: c.isTop,
+              isNew: c.isNew,
+              mapUrl: c.mapUrl,
+            },
+          })
+        )
+      );
+      updated += results.filter(r => r.status === 'fulfilled').length;
+    }
+  }
+
+  return { added, updated };
 }
