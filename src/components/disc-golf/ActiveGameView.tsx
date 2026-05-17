@@ -124,7 +124,7 @@ function useSwipe(onSwipeLeft: () => void, onSwipeRight: () => void, threshold =
 }
 
 // ==========================================
-// Player Throw Card
+// Player Throw Card — supports null (unscored) state
 // ==========================================
 function PlayerThrowCard({
   playerName,
@@ -136,20 +136,21 @@ function PlayerThrowCard({
   isSaved,
 }: {
   playerName: string;
-  throws: number;
+  throws: number | null; // null = not yet scored
   par: number | null;
   onIncrease: () => void;
   onDecrease: () => void;
   isSaving: boolean;
   isSaved: boolean;
 }) {
-  const scoreName = getScoreName(throws, par);
-  const scoreColor = getScoreColor(throws, par);
-  const scoreBg = getScoreBg(throws, par);
-  const relativePar = par ? formatRelativeToPar(throws, par) : null;
+  const isScored = throws !== null;
+  const scoreName = isScored ? getScoreName(throws, par) : null;
+  const scoreColor = isScored ? getScoreColor(throws, par) : '';
+  const scoreBg = isScored ? getScoreBg(throws, par) : '';
+  const relativePar = isScored && par ? formatRelativeToPar(throws, par) : null;
 
   return (
-    <Card className={`overflow-hidden transition-colors duration-300 ${scoreBg || 'bg-card'}`}>
+    <Card className={`overflow-hidden transition-colors duration-300 ${isScored ? (scoreBg || 'bg-card') : 'bg-muted/30 border-dashed'}`}>
       <CardContent className="p-3 sm:p-4">
         {/* Player name row */}
         <div className="flex items-center justify-between mb-2">
@@ -199,7 +200,7 @@ function PlayerThrowCard({
             size="icon"
             className="size-12 sm:size-14 rounded-xl text-lg font-bold shrink-0 active:scale-95 transition-transform"
             onClick={onDecrease}
-            disabled={throws <= 1}
+            disabled={!isScored || throws <= 1}
             aria-label="Vähennä heitto"
           >
             <Minus className="size-5" />
@@ -208,17 +209,21 @@ function PlayerThrowCard({
           <div className="flex flex-col items-center min-w-[4rem]">
             <AnimatePresence mode="popLayout">
               <motion.span
-                key={throws}
+                key={isScored ? throws : 'empty'}
                 initial={{ scale: 0.8, opacity: 0.5, y: -4 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.8, opacity: 0, y: 4 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                className="text-4xl sm:text-5xl font-bold tabular-nums leading-none"
+                className={`text-4xl sm:text-5xl font-bold tabular-nums leading-none ${
+                  !isScored ? 'text-muted-foreground' : ''
+                }`}
               >
-                {throws}
+                {isScored ? throws : '—'}
               </motion.span>
             </AnimatePresence>
-            <span className="text-[10px] text-muted-foreground mt-0.5">heittoa</span>
+            <span className="text-[10px] text-muted-foreground mt-0.5">
+              {isScored ? 'heittoa' : 'kirjaa heitto'}
+            </span>
           </div>
 
           <Button
@@ -307,7 +312,8 @@ export function ActiveGameView() {
   const [currentHole, setCurrentHole] = useState(1);
 
   // Local throw state: Map<`${playerId}-${holeNumber}`, throws>
-  const [localThrows, setLocalThrows] = useState<Record<string, number>>({});
+  // null = not yet scored, number = scored throws
+  const [localThrows, setLocalThrows] = useState<Record<string, number | null>>({});
 
   // Track which scores are being saved / have been saved
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
@@ -319,7 +325,7 @@ export function ActiveGameView() {
   // Initialize local throws from game scores
   useEffect(() => {
     if (!activeGame) return;
-    const throwsMap: Record<string, number> = {};
+    const throwsMap: Record<string, number | null> = {};
     for (const score of activeGame.scores) {
       throwsMap[`${score.playerId}-${score.holeNumber}`] = score.throws;
     }
@@ -336,16 +342,17 @@ export function ActiveGameView() {
   const currentHoleDetail = holeDetails.find((h) => h.holeNumber === currentHole);
   const currentHolePar = currentHoleDetail?.par ?? null;
 
-  // Get throw count for a player on a hole
-  const getThrows = useCallback((playerId: string, holeNumber: number): number => {
+  // Get throw count for a player on a hole — returns null if unscored
+  const getThrows = useCallback((playerId: string, holeNumber: number): number | null => {
     const key = `${playerId}-${holeNumber}`;
-    if (localThrows[key] !== undefined) return localThrows[key];
+    if (key in localThrows) return localThrows[key];
     // Check game scores
     const score = game?.scores.find(
       (s) => s.playerId === playerId && s.holeNumber === holeNumber
     );
-    return score?.throws ?? (currentHolePar ?? 3); // Default to par or 3
-  }, [localThrows, game?.scores, currentHolePar]);
+    if (score) return score.throws;
+    return null; // Not yet scored
+  }, [localThrows, game?.scores]);
 
   // Compute total scores for each player
   const playerTotals = useMemo(() => {
@@ -357,7 +364,7 @@ export function ActiveGameView() {
       for (let h = 1; h <= totalHoles; h++) {
         const key = `${player.id}-${h}`;
         const throws = localThrows[key];
-        if (throws !== undefined) {
+        if (throws !== undefined && throws !== null) {
           totalThrows += throws;
           holesCompleted++;
           // Get par for this hole
@@ -385,7 +392,8 @@ export function ActiveGameView() {
     for (const player of players) {
       for (let h = 1; h <= totalHoles; h++) {
         const key = `${player.id}-${h}`;
-        if (localThrows[key] === undefined) {
+        const localVal = localThrows[key];
+        if (localVal === undefined || localVal === null) {
           const score = game.scores.find(
             (s) => s.playerId === player.id && s.holeNumber === h
           );
@@ -446,22 +454,37 @@ export function ActiveGameView() {
     800
   );
 
+  // Get par for a specific hole
+  const getHolePar = useCallback((holeNumber: number): number | null => {
+    const holeDetail = holeDetails.find((h) => h.holeNumber === holeNumber);
+    return holeDetail?.par ?? null;
+  }, [holeDetails]);
+
   // Update throw count for a player on a hole
   const updateThrow = useCallback(
-    (playerId: string, holeNumber: number, throws: number) => {
-      if (throws < 1) return;
+    (playerId: string, holeNumber: number, throws: number | null) => {
+      if (throws !== null && throws < 1) return;
       const key = `${playerId}-${holeNumber}`;
       setLocalThrows((prev) => ({ ...prev, [key]: throws }));
 
-      // Get par for the hole
-      const holeDetail = holeDetails.find((h) => h.holeNumber === holeNumber);
-      const par = holeDetail?.par ?? null;
-
-      // Queue for save
-      pendingSavesRef.current.set(key, { playerId, holeNumber, throws, par });
-      debouncedSave();
+      // If throws is not null, queue for save
+      if (throws !== null) {
+        const par = getHolePar(holeNumber);
+        pendingSavesRef.current.set(key, { playerId, holeNumber, throws, par });
+        debouncedSave();
+      }
     },
-    [holeDetails, debouncedSave]
+    [getHolePar, debouncedSave]
+  );
+
+  // Handle first input for a player on a hole — start from par or 3
+  const handleFirstInput = useCallback(
+    (playerId: string, holeNumber: number, direction: 'up' | 'down') => {
+      const par = getHolePar(holeNumber) ?? 3;
+      const startValue = direction === 'up' ? par : Math.max(1, par - 1);
+      updateThrow(playerId, holeNumber, startValue);
+    },
+    [getHolePar, updateThrow]
   );
 
   // Hole navigation
@@ -592,7 +615,9 @@ export function ActiveGameView() {
             // Check if this hole has any scores
             const hasScores = players.some((p) => {
               const key = `${p.id}-${hole}`;
-              return localThrows[key] !== undefined || game.scores.some(
+              const localVal = localThrows[key];
+              if (localVal !== undefined && localVal !== null) return true;
+              return game.scores.some(
                 (s) => s.playerId === p.id && s.holeNumber === hole
               );
             });
@@ -617,7 +642,7 @@ export function ActiveGameView() {
         </div>
       </div>
 
-      {/* Hole info card */}
+      {/* Hole info card — with larger HD image */}
       <AnimatePresence mode="wait">
         <motion.div
           key={currentHole}
@@ -627,27 +652,24 @@ export function ActiveGameView() {
           transition={{ duration: 0.15 }}
         >
           <Card className="mb-4 overflow-hidden">
+            {/* Full-width hole image when available */}
+            {(currentHoleDetail?.imageUrl || currentHoleDetail?.thumbUrl) && (
+              <a
+                href={currentHoleDetail.imageUrl || currentHoleDetail.thumbUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block overflow-hidden hover:opacity-95 transition-opacity"
+              >
+                <img
+                  src={currentHoleDetail.imageUrl || currentHoleDetail.thumbUrl}
+                  alt={`Väylä ${currentHole}`}
+                  className="w-full h-40 sm:h-52 object-cover"
+                  loading="lazy"
+                />
+              </a>
+            )}
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-start gap-3">
-                {/* Hole image thumbnail */}
-                {currentHoleDetail?.thumbUrl && (
-                  <div className="shrink-0">
-                    <a
-                      href={currentHoleDetail.imageUrl || currentHoleDetail.thumbUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded-lg overflow-hidden border hover:opacity-90 transition-opacity"
-                    >
-                      <img
-                        src={currentHoleDetail.thumbUrl}
-                        alt={`Väylä ${currentHole}`}
-                        className="size-20 sm:size-24 object-cover"
-                        loading="lazy"
-                      />
-                    </a>
-                  </div>
-                )}
-
                 {/* Hole details */}
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -656,7 +678,7 @@ export function ActiveGameView() {
                         {currentHoleDetail.name}
                       </span>
                     )}
-                    {!currentHoleDetail?.thumbUrl && currentHoleDetail?.imageUrl && (
+                    {!currentHoleDetail?.thumbUrl && !currentHoleDetail?.imageUrl && currentHoleDetail?.imageUrl && (
                       <a
                         href={currentHoleDetail.imageUrl}
                         target="_blank"
@@ -701,6 +723,7 @@ export function ActiveGameView() {
         {players.map((player) => {
           const throws = getThrows(player.id, currentHole);
           const displayName = player.displayName || player.username;
+          const isScored = throws !== null;
 
           return (
             <PlayerThrowCard
@@ -708,8 +731,20 @@ export function ActiveGameView() {
               playerName={displayName}
               throws={throws}
               par={currentHolePar}
-              onIncrease={() => updateThrow(player.id, currentHole, throws + 1)}
-              onDecrease={() => updateThrow(player.id, currentHole, throws - 1)}
+              onIncrease={() => {
+                if (isScored) {
+                  updateThrow(player.id, currentHole, throws + 1);
+                } else {
+                  handleFirstInput(player.id, currentHole, 'up');
+                }
+              }}
+              onDecrease={() => {
+                if (isScored) {
+                  updateThrow(player.id, currentHole, throws - 1);
+                } else {
+                  handleFirstInput(player.id, currentHole, 'down');
+                }
+              }}
               isSaving={isKeySaving(player.id, currentHole)}
               isSaved={isKeySaved(player.id, currentHole)}
             />
