@@ -9,27 +9,24 @@ cd /app/mini-services/scraper-service
 bun run dev &
 cd /app
 
-# Wait for scraper to actually be ready by polling port 3030
+# Wait for scraper port to open using /bin/sh TCP check
 echo "==> Waiting for scraper service to be ready..."
-SCRAPER_READY=0
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:3030/scrape/list -o /dev/null 2>/dev/null; then
-    SCRAPER_READY=1
-    echo "==> Scraper ready after ${i}s"
+  # Use bash TCP pseudo-device to check if port is open
+  if (echo > /dev/tcp/localhost/3030) 2>/dev/null; then
+    echo "==> Scraper port open after ${i}s"
     break
   fi
   sleep 1
 done
 
-if [ "$SCRAPER_READY" = "0" ]; then
-  echo "==> Warning: scraper not ready after 30s, continuing anyway"
-fi
-
-# Daily scrape loop in background
+# Daily scrape loop in background - starts with a 10s delay to let scraper fully init
 (
+  echo "==> Waiting 10s before first scrape..."
+  sleep 10
   while true; do
     echo "==> Running daily scrape..."
-    curl -sf http://localhost:3030/scrape/list && echo "Scrape OK" || echo "Scrape failed"
+    curl -sf --max-time 30 http://localhost:3030/scrape/list && echo "Scrape OK" || echo "Scrape failed"
     echo "==> Running db:push..."
     cd /app && bunx prisma db push --schema=/app/prisma/schema.prisma 2>/dev/null || true
     echo "==> Next scrape in 24h"
