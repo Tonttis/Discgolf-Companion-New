@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { scrapeCourseList } from '@/lib/scraper/frisbeegolfradat';
 
 const SCRAPER_PORT = 3030;
 const SCRAPER_BASE = `http://localhost:${SCRAPER_PORT}`;
@@ -28,64 +29,80 @@ export async function GET() {
       }
     }
 
-    // Sync from frisbeegolfradat.fi via scraper service
+    // Try scraper service first
+    let courses: any[] | null = null;
+
     try {
-      const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`);
+      const scraperResponse = await fetch(`${SCRAPER_BASE}/scrape/list`, {
+        signal: AbortSignal.timeout(10_000),
+      });
 
       if (scraperResponse.ok) {
         const scraperData = await scraperResponse.json();
-
         if (scraperData.success && scraperData.courses) {
-          let added = 0;
-          let updated = 0;
-
-          for (const course of scraperData.courses) {
-            const existing = await db.course.findUnique({ where: { slug: course.slug } });
-
-            if (existing) {
-              await db.course.update({
-                where: { slug: course.slug },
-                data: {
-                  name: course.name,
-                  city: course.city,
-                  holes: course.holes,
-                  rating: course.rating,
-                  classification: course.classification,
-                  isTop: course.isTop,
-                  isNew: course.isNew,
-                  mapUrl: course.mapUrl,
-                },
-              });
-              updated++;
-            } else {
-              await db.course.create({
-                data: {
-                  slug: course.slug,
-                  name: course.name,
-                  city: course.city,
-                  holes: course.holes,
-                  rating: course.rating,
-                  classification: course.classification,
-                  isTop: course.isTop,
-                  isNew: course.isNew,
-                  mapUrl: course.mapUrl,
-                },
-              });
-              added++;
-            }
-          }
-
-          return NextResponse.json({
-            status: 'synced',
-            total: scraperData.courses.length,
-            added,
-            updated,
-            message: `Synced ${scraperData.courses.length} courses (${added} new, ${updated} updated)`,
-          });
+          courses = scraperData.courses;
         }
       }
-    } catch (error) {
-      console.error('Scraper service error:', error);
+    } catch {
+      // Scraper service unavailable — try direct scraping
+    }
+
+    // Fallback: direct scraping (works locally without external service)
+    if (!courses) {
+      try {
+        courses = await scrapeCourseList();
+      } catch (error) {
+        console.error('Direct scraping also failed:', error);
+      }
+    }
+
+    if (courses && courses.length > 0) {
+      let added = 0;
+      let updated = 0;
+
+      for (const course of courses) {
+        const existing = await db.course.findUnique({ where: { slug: course.slug } });
+
+        if (existing) {
+          await db.course.update({
+            where: { slug: course.slug },
+            data: {
+              name: course.name,
+              city: course.city,
+              holes: course.holes,
+              rating: course.rating,
+              classification: course.classification,
+              isTop: course.isTop,
+              isNew: course.isNew,
+              mapUrl: course.mapUrl,
+            },
+          });
+          updated++;
+        } else {
+          await db.course.create({
+            data: {
+              slug: course.slug,
+              name: course.name,
+              city: course.city,
+              holes: course.holes,
+              rating: course.rating,
+              classification: course.classification,
+              isTop: course.isTop,
+              isNew: course.isNew,
+              mapUrl: course.mapUrl,
+            },
+          });
+          added++;
+        }
+      }
+
+      return NextResponse.json({
+        status: 'synced',
+        total: courses.length,
+        added,
+        updated,
+        message: `Synced ${courses.length} courses (${added} new, ${updated} updated)`,
+      });
     }
 
     // Fallback: return existing data

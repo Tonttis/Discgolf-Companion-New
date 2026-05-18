@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "bun --hot index.ts"
+    "dev": "bun scraper.ts"
   },
-  "dependencies": {
-    "z-ai-web-dev-sdk": "^0.0.18"
-  }
+  "dependencies": {}
 }
