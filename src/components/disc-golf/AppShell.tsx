@@ -156,7 +156,7 @@ export function AppShell() {
           <div className="flex items-center justify-around h-14">
             <button
               type="button"
-              onClick={() => useAppStore.getState().navigateToHome()}
+              onClick={() => useAppStore.getState().navigateHome()}
               className={`cursor-pointer flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'home'
                   ? 'text-emerald-600 dark:text-emerald-400'
