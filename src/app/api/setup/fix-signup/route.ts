@@ -2,19 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 
 // Fix SQL for the broken signup trigger
+// This adds EXCEPTION handling so the trigger NEVER blocks user creation,
+// and drops any broken bag triggers that might be causing the failure
 export const FIX_SIGNUP_SQL = `-- ============================================
 -- FIX: "Database error saving new user"
 -- ============================================
--- The handle_new_user_bag trigger is breaking new user creation.
--- This SQL drops it (we have auto-create in the app instead)
--- and makes handle_new_user more robust with error handling.
+-- The handle_new_user trigger is breaking new user creation.
+-- This SQL makes it robust with error handling so it NEVER fails signup.
 -- ============================================
 
--- 1. Drop the broken bag trigger and function
+-- 1. Drop any broken bag triggers and functions
 DROP TRIGGER IF EXISTS on_auth_user_created_bag ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user_bag();
 
--- 2. Recreate handle_new_user with error handling so it never blocks signup
+-- 2. Recreate handle_new_user with EXCEPTION handling
+-- This ensures the trigger NEVER blocks user creation even if profile insert fails
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -46,13 +48,19 @@ BEGIN
   );
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
-  -- Log error but NEVER fail the user creation
-  RAISE WARNING 'handle_new_user failed: %', SQLERRM;
+  -- NEVER fail the user creation — the app will create profile as fallback
+  RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. Also add pic and link columns to bag_discs if not yet added
+-- 3. Recreate the trigger (only one, no duplicates)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 4. Also add pic and link columns to bag_discs if not yet added
 ALTER TABLE bag_discs ADD COLUMN IF NOT EXISTS pic text;
 ALTER TABLE bag_discs ADD COLUMN IF NOT EXISTS link text;
 `;
@@ -85,7 +93,6 @@ export async function GET() {
             message: 'Käyttäjän luonti on rikki — tietokantatriggeri kaataa rekisteröitymisen',
             error: error.message,
             fixSql: FIX_SIGNUP_SQL,
-            dashboardUrl: 'https://supabase.com/dashboard/project/hzfizsucmelyxrnmpxib/sql',
           });
         }
       } else if (data.user) {
@@ -105,7 +112,64 @@ export async function GET() {
       message: 'Virhe tarkistettaessa rekisteröitymistä',
       error: String(error),
       fixSql: FIX_SIGNUP_SQL,
-      dashboardUrl: 'https://supabase.com/dashboard/project/hzfizsucmelyxrnmpxib/sql',
     });
+  }
+}
+
+// POST /api/setup/fix-signup — Apply the fix using admin client
+// This tries to fix the trigger by re-registering the user via admin API
+export async function POST(request: NextRequest) {
+  try {
+    const adminClient = await createSupabaseAdminClient();
+    if (!adminClient) {
+      return NextResponse.json({ error: 'Admin client not available' }, { status: 503 });
+    }
+
+    const body = await request.json();
+    const { userId } = body;
+
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+    }
+
+    // Try to create the profile for the user using admin client (bypasses RLS)
+    const { data: userData } = await adminClient.auth.admin.getUserById(userId);
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const user = userData.user;
+    const baseUsername = (user.user_metadata?.username as string) || user.email?.split('@')[0] || 'user';
+    const displayName = (user.user_metadata?.display_name as string) || baseUsername;
+
+    // Check if profile already exists
+    const { data: existingProfile } = await adminClient
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (existingProfile) {
+      return NextResponse.json({ success: true, message: 'Profile already exists' });
+    }
+
+    // Create the profile
+    const { error: profileError } = await adminClient
+      .from('profiles')
+      .insert({
+        id: userId,
+        username: baseUsername,
+        display_name: displayName,
+      });
+
+    if (profileError) {
+      console.error('Profile creation error:', profileError);
+      return NextResponse.json({ error: profileError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Profile created' });
+  } catch (error) {
+    console.error('Fix signup POST error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

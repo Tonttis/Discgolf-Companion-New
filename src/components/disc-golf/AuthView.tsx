@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LogIn,
@@ -23,6 +22,10 @@ import {
   FileCode2,
   ArrowRight,
   AlertCircle,
+  ExternalLink,
+  Copy,
+  Check,
+  Wrench,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { toast } from 'sonner';
@@ -232,6 +235,85 @@ function SupabaseSetupGuide() {
   );
 }
 
+function BrokenSignupFixGuide({ fixSql }: { fixSql: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(fixSql);
+      setCopied(true);
+      toast.success('SQL kopioitu leikepöydälle!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Kopiointi epäonnistui');
+    }
+  };
+
+  return (
+    <div className="rounded-xl border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30 p-4 space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="flex items-center justify-center size-9 rounded-lg bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 shrink-0">
+          <Wrench className="size-5" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-red-800 dark:text-red-300">
+            Tietokantavirhe — Rekisteröityminen ei toimi
+          </p>
+          <p className="text-xs text-red-700 dark:text-red-400 mt-1 leading-relaxed">
+            Supabasen tietokantatriggeri on rikki ja estää uusien käyttäjien luomisen.
+            Korjaa se ajamalla alla oleva SQL Supabasen SQL Editorissa.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-red-800 dark:text-red-300">Korjausohjeet:</p>
+        <ol className="text-xs text-red-700 dark:text-red-400 space-y-2 list-decimal pl-4">
+          <li className="leading-relaxed">
+            Avaa{' '}
+            <a
+              href="https://supabase.com/dashboard/project/hzfizsucmelyxrnmpxib/sql"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 underline font-semibold hover:no-underline"
+            >
+              Supabase SQL Editor
+              <ExternalLink className="size-3" />
+            </a>
+          </li>
+          <li className="leading-relaxed">Kopioi alla oleva SQL ja liitä se editoriin</li>
+          <li className="leading-relaxed">Paina <strong>Run</strong> (Ctrl+Enter)</li>
+          <li className="leading-relaxed">Palaa tähän ja yritä rekisteröitymistä uudelleen</li>
+        </ol>
+      </div>
+
+      <div className="relative">
+        <pre className="bg-white/80 dark:bg-black/30 p-3 rounded-lg text-[10px] font-mono overflow-x-auto max-h-52 overflow-y-auto whitespace-pre-wrap border border-red-200 dark:border-red-800">
+          {fixSql}
+        </pre>
+        <Button
+          variant="outline"
+          size="sm"
+          className="absolute top-2 right-2 h-8 text-xs gap-1.5 bg-white/90 dark:bg-black/50 backdrop-blur-sm"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <>
+              <Check className="size-3.5 text-emerald-600" />
+              Kopioitu
+            </>
+          ) : (
+            <>
+              <Copy className="size-3.5" />
+              Kopioi SQL
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AuthView() {
   const { signIn, signUp, isLoading, supabaseConfigured } = useAuth();
 
@@ -247,9 +329,42 @@ export function AuthView() {
   const [displayName, setDisplayName] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
   const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState(false);
+
+  // Signup broken detection
   const [signupBroken, setSignupBroken] = useState(false);
   const [fixSql, setFixSql] = useState<string>('');
-  const [fixSqlCopied, setFixSqlCopied] = useState(false);
+  const [checkingSignup, setCheckingSignup] = useState(true);
+
+  // Auto-check if signup is broken when the component loads
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      setCheckingSignup(false);
+      return;
+    }
+
+    let cancelled = false;
+    const checkSignup = async () => {
+      try {
+        const res = await fetch('/api/setup/fix-signup');
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            if (data.broken) {
+              setSignupBroken(true);
+              setFixSql(data.fixSql || '');
+            }
+          }
+        }
+      } catch {
+        // Ignore check failure
+      } finally {
+        if (!cancelled) setCheckingSignup(false);
+      }
+    };
+
+    checkSignup();
+    return () => { cancelled = true; };
+  }, [supabaseConfigured]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,19 +434,23 @@ export function AuthView() {
         // Detect database trigger error
         if (error.includes('Database error')) {
           setSignupBroken(true);
-          // Fetch the fix SQL
-          fetch('/api/setup/fix-signup')
-            .then(r => r.json())
-            .then(data => {
-              if (data.fixSql) setFixSql(data.fixSql);
-            })
-            .catch(() => {});
+          // Fetch the fix SQL if not already loaded
+          if (!fixSql) {
+            fetch('/api/setup/fix-signup')
+              .then(r => r.json())
+              .then(data => {
+                if (data.fixSql) setFixSql(data.fixSql);
+              })
+              .catch(() => {});
+          }
+          toast.error('Tietokantavirhe', {
+            description: 'Supabasen triggeri on rikki — katso korjausohjeet',
+          });
+        } else {
+          toast.error('Rekisteröinti epäonnistui', {
+            description: error,
+          });
         }
-        toast.error('Rekisteröinti epäonnistui', {
-          description: error.includes('Database error') 
-            ? 'Tietokantavirhe — katso korjausohjeet alla' 
-            : error,
-        });
       } else if (needsEmailConfirmation) {
         setEmailConfirmationNeeded(true);
         toast.success('Tili luotu!', {
@@ -351,7 +470,7 @@ export function AuthView() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || checkingSignup) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="size-8 animate-spin text-emerald-600" />
@@ -388,6 +507,11 @@ export function AuthView() {
           Luo tili tai kirjaudu sisään tallentaaksesi pelit ja suosikit
         </p>
       </div>
+
+      {/* Broken signup warning - shown at the top before tabs */}
+      {signupBroken && fixSql && (
+        <BrokenSignupFixGuide fixSql={fixSql} />
+      )}
 
       {/* Auth Tabs */}
       <Card className="border-0 shadow-lg">
@@ -476,6 +600,16 @@ export function AuthView() {
           <TabsContent value="register" className="mt-0">
             <form onSubmit={handleRegister}>
               <CardContent className="p-6 space-y-4">
+                {/* Inline warning if broken but no fix SQL loaded yet */}
+                {signupBroken && !fixSql && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30">
+                    <AlertCircle className="size-4 text-red-600 dark:text-red-400 shrink-0" />
+                    <p className="text-xs text-red-700 dark:text-red-400">
+                      Rekisteröityminen on tilapäisesti pois käytöstä tietokantavirheen vuoksi.
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="register-email" className="text-sm font-medium">
                     Sähköposti
@@ -578,53 +712,20 @@ export function AuthView() {
                   </div>
                 )}
 
-                {signupBroken && (
-                  <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-semibold text-red-800 dark:text-red-300">
-                        ⚠️ Tietokantavirhe — Rekisteröityminen ei toimi
-                      </p>
-                      <p className="text-xs text-red-700 dark:text-red-400 mt-1">
-                        Supabasen tietokantatriggeri on rikki. Korjaa se ajamalla alla oleva SQL Supabasen SQL Editorissa.
-                      </p>
-                    </div>
-                    <ol className="text-xs text-red-700 dark:text-red-400 space-y-1.5 list-decimal pl-4">
-                      <li>Avaa <a href="https://supabase.com/dashboard/project/hzfizsucmelyxrnmpxib/sql" target="_blank" rel="noopener noreferrer" className="underline font-medium">Supabase SQL Editor</a></li>
-                      <li>Kopioi alla oleva SQL ja liitä se editoriin</li>
-                      <li>Paina <strong>Run</strong> (Ctrl+Enter)</li>
-                      <li>Yritä rekisteröitymistä uudelleen</li>
-                    </ol>
-                    {fixSql && (
-                      <div className="relative">
-                        <pre className="bg-muted/80 p-3 rounded-md text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                          {fixSql}
-                        </pre>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="absolute top-2 right-2 h-7 text-xs"
-                          onClick={() => {
-                            navigator.clipboard.writeText(fixSql);
-                            setFixSqlCopied(true);
-                            toast.success('SQL kopioitu!');
-                            setTimeout(() => setFixSqlCopied(false), 2000);
-                          }}
-                        >
-                          {fixSqlCopied ? 'Kopioitu ✓' : 'Kopioi SQL'}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
                 <Button
                   type="submit"
                   className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                  disabled={registerLoading || !USERNAME_REGEX.test(username)}
+                  disabled={registerLoading || !USERNAME_REGEX.test(username) || signupBroken}
                 >
                   {registerLoading ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
                       Rekisteröidään…
+                    </>
+                  ) : signupBroken ? (
+                    <>
+                      <AlertCircle className="size-4" />
+                      Korjaa ensin tietokanta
                     </>
                   ) : (
                     <>

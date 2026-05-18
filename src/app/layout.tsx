@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -21,13 +21,6 @@ export const metadata: Metadata = {
   icons: {
     icon: "/disc-golf-logo.png",
   },
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: "cover",
-  },
   openGraph: {
     title: "DiscGolf Companion",
     description: "Selaa suomalaisia frisbeegolfratoja, kirjaa pelejä ja seuraa edistymistäsi",
@@ -38,6 +31,14 @@ export const metadata: Metadata = {
     title: "DiscGolf Companion",
     description: "Selaa suomalaisia frisbeegolfratoja, kirjaa pelejä ja seuraa edistymistäsi",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

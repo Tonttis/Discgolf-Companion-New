@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// The fix SQL for existing installations that are missing the INSERT policy and have a broken trigger
-const FIX_SQL = `-- Fix: Add missing INSERT policy on profiles and update trigger
+// The fix SQL for existing installations that have a broken trigger
+const FIX_SQL = `-- Fix: Make handle_new_user trigger robust so it NEVER blocks signup
 -- Run this in your Supabase SQL Editor if registration doesn't work
 
--- 1. Add the missing INSERT policy so users can create their own profiles
-DO $$ BEGIN
-  CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- 1. Drop any broken bag triggers and functions
+DROP TRIGGER IF EXISTS on_auth_user_created_bag ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user_bag();
 
--- 2. Update the trigger function to handle special characters in emails
+-- 2. Recreate handle_new_user with EXCEPTION handling
+-- This ensures the trigger NEVER blocks user creation even if profile insert fails
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -19,21 +18,12 @@ DECLARE
   final_username TEXT;
   counter INT := 0;
 BEGIN
-  -- Extract the part before @ from email
   base_username := LOWER(SPLIT_PART(NEW.email, '@', 1));
-
-  -- Remove any character that isn't a-z, 0-9, or underscore
   clean_username := REGEXP_REPLACE(base_username, '[^a-z0-9_]', '', 'g');
-
-  -- If the cleaned username is too short, use 'user' as base
   IF LENGTH(clean_username) < 3 THEN
     clean_username := 'user';
   END IF;
-
-  -- Truncate to 20 chars
   clean_username := SUBSTRING(clean_username FROM 1 FOR 20);
-
-  -- Check if username is taken, append number if needed
   final_username := clean_username;
   WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
     counter := counter + 1;
@@ -43,7 +33,6 @@ BEGIN
       EXIT;
     END IF;
   END LOOP;
-
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (
     NEW.id,
@@ -51,12 +40,16 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  -- NEVER fail the user creation — the app will create profile as fallback
+  RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Recreate the trigger
+-- 3. Recreate the trigger (only one, no duplicates)
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE OR REPLACE TRIGGER on_auth_user_created
+CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 `;
@@ -77,7 +70,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Auto-create profile on signup (with robust username generation)
+-- Auto-create profile on signup (with robust username generation + error handling)
+-- IMPORTANT: The EXCEPTION block ensures the trigger NEVER blocks user creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -108,10 +102,18 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  -- NEVER fail user creation even if profile insert fails
+  RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Drop any old/broken triggers before creating the correct one
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_created_bag ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user_bag();
+
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -157,6 +159,37 @@ CREATE TABLE IF NOT EXISTS scores (
   throws INT NOT NULL DEFAULT 0 CHECK (throws >= 0),
   par INT,
   UNIQUE(game_id, player_id, hole_number)
+);
+
+-- 6. Disc bags
+CREATE TABLE IF NOT EXISTS disc_bags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL DEFAULT 'Päälaukku',
+  is_primary BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, name)
+);
+
+-- 7. Bag discs
+CREATE TABLE IF NOT EXISTS bag_discs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bag_id UUID REFERENCES disc_bags(id) ON DELETE CASCADE NOT NULL,
+  disc_id TEXT NOT NULL,
+  disc_name TEXT NOT NULL,
+  brand TEXT,
+  category TEXT,
+  speed NUMERIC,
+  glide NUMERIC,
+  turn NUMERIC,
+  fade NUMERIC,
+  stability TEXT,
+  pic TEXT,
+  link TEXT,
+  notes TEXT,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(bag_id, disc_id)
 );
 
 -- ============================================
@@ -240,6 +273,50 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+ALTER TABLE disc_bags ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users can read own bags" ON disc_bags FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own bags" ON disc_bags FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own bags" ON disc_bags FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own bags" ON disc_bags FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE bag_discs ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users can read own bag discs" ON bag_discs FOR SELECT USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own bag discs" ON bag_discs FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own bag discs" ON bag_discs FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own bag discs" ON bag_discs FOR DELETE USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ============================================
 -- Indexes
 -- ============================================
@@ -250,6 +327,8 @@ CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
 CREATE INDEX IF NOT EXISTS idx_game_players_user ON game_players(user_id);
 CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id);
+CREATE INDEX IF NOT EXISTS idx_disc_bags_user ON disc_bags(user_id);
+CREATE INDEX IF NOT EXISTS idx_bag_discs_bag ON bag_discs(bag_id);
 `;
 
 // GET /api/setup - Check database setup status
@@ -296,9 +375,7 @@ export async function GET() {
       });
     }
 
-    // Tables exist - check if the INSERT policy is missing (common issue)
-    // We try to detect this by checking if a profile can be inserted
-    // For now, just return ready but also provide the fix SQL
+    // Tables exist - provide the fix SQL in case the trigger is broken
     return NextResponse.json({
       configured: true,
       status: 'ready',

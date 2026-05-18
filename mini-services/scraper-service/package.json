@@ -5,5 +5,7 @@
   "scripts": {
     "dev": "bun --hot index.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "z-ai-web-dev-sdk": "^0.0.18"
+  }
 }

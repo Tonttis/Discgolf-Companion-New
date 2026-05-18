@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Auto-create profile on signup (with robust username generation)
+-- Auto-create profile on signup (with robust username generation + error handling)
+-- IMPORTANT: The EXCEPTION block ensures the trigger NEVER blocks user creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -55,10 +56,19 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'display_name', SPLIT_PART(NEW.email, '@', 1))
   );
   RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  -- NEVER fail user creation even if profile insert fails
+  -- The app will create the profile via /api/auth/register as a fallback
+  RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Drop any old/broken triggers before creating the correct one
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_created_bag ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user_bag();
+
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -106,108 +116,170 @@ CREATE TABLE IF NOT EXISTS scores (
   UNIQUE(game_id, player_id, hole_number)
 );
 
+-- 6. Disc bags
+CREATE TABLE IF NOT EXISTS disc_bags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL DEFAULT 'Päälaukku',
+  is_primary BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, name)
+);
+
+-- 7. Bag discs
+CREATE TABLE IF NOT EXISTS bag_discs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bag_id UUID REFERENCES disc_bags(id) ON DELETE CASCADE NOT NULL,
+  disc_id TEXT NOT NULL,
+  disc_name TEXT NOT NULL,
+  brand TEXT,
+  category TEXT,
+  speed NUMERIC,
+  glide NUMERIC,
+  turn NUMERIC,
+  fade NUMERIC,
+  stability TEXT,
+  pic TEXT,
+  link TEXT,
+  notes TEXT,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(bag_id, disc_id)
+);
+
 -- ============================================
 -- Row Level Security (RLS)
 -- ============================================
--- NOTE: We use SECURITY DEFINER helper functions
--- to avoid infinite recursion between games ↔
--- game_players policies (Supabase error 42P17).
--- ============================================
-
--- Helper: Check if the current user is a participant in a game
--- (bypasses RLS via SECURITY DEFINER)
-CREATE OR REPLACE FUNCTION is_game_participant(game_uuid UUID)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM game_players
-    WHERE game_id = game_uuid AND user_id = auth.uid()
-  );
-END;
-$$;
-
--- Helper: Check if the current user created a game
--- (bypasses RLS via SECURITY DEFINER)
-CREATE OR REPLACE FUNCTION is_game_creator(game_uuid UUID)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM games
-    WHERE id = game_uuid AND created_by = auth.uid()
-  );
-END;
-$$;
-
--- Helper: Check if a player record belongs to the current user
--- (bypasses RLS via SECURITY DEFINER)
-CREATE OR REPLACE FUNCTION is_own_player_record(player_uuid UUID)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM game_players
-    WHERE id = player_uuid AND user_id = auth.uid()
-  );
-END;
-$$;
 
 -- Profiles: anyone can read, users can insert/update their own
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Profiles are viewable by everyone" ON profiles FOR SELECT USING (true);
-CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+DO $$ BEGIN
+  CREATE POLICY "Profiles are viewable by everyone" ON profiles FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Favorites: users can read/write their own
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can read own favorites" ON favorites FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own favorites" ON favorites FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can delete own favorites" ON favorites FOR DELETE USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "Users can read own favorites" ON favorites FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own favorites" ON favorites FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own favorites" ON favorites FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Games: readable by creator or game participants (using helper function to avoid recursion)
+-- Games: readable by game players, creatable by authenticated users
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
-  created_by = auth.uid()
-  OR is_game_participant(id)
-);
-CREATE POLICY "Authenticated users can create games" ON games FOR INSERT WITH CHECK (auth.uid() = created_by);
-CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (
-  created_by = auth.uid()
-  OR is_game_participant(id)
-);
+DO $$ BEGIN
+  CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
+    EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid())
+    OR created_by = auth.uid()
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Authenticated users can create games" ON games FOR INSERT WITH CHECK (auth.uid() = created_by);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Game creator can update games" ON games FOR UPDATE USING (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid()));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Game players: readable by game creator or participants (using helper functions to avoid recursion)
+-- Game players: readable by game participants
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
-  is_game_creator(game_id)
-  OR is_game_participant(game_id)
-  OR user_id = auth.uid()
-);
-CREATE POLICY "Game creator can add players" ON game_players FOR INSERT WITH CHECK (
-  is_game_creator(game_id)
-  OR user_id = auth.uid()
-);
+DO $$ BEGIN
+  CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
+    EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = game_players.game_id AND gp.user_id = auth.uid())))
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Game creator can add players" ON game_players FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND created_by = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Scores: readable by game participants (using helper functions to avoid recursion)
+-- Scores: readable by game participants, writable by the player themselves or game creator
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
-  is_game_creator(game_id)
-  OR is_game_participant(game_id)
-);
-CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (
-  auth.uid() IS NOT NULL
-  AND is_own_player_record(player_id)
-);
-CREATE POLICY "Players can update own scores" ON scores FOR UPDATE USING (
-  is_own_player_record(player_id)
-);
+DO $$ BEGIN
+  CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
+    EXISTS (SELECT 1 FROM games WHERE id = scores.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = scores.game_id AND user_id = auth.uid())))
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Players can insert own scores" ON scores FOR INSERT WITH CHECK (
+    auth.uid() IS NOT NULL
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Players can update own scores" ON scores FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM game_players WHERE id = scores.player_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Disc bags: users can manage their own bags
+ALTER TABLE disc_bags ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users can read own bags" ON disc_bags FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own bags" ON disc_bags FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own bags" ON disc_bags FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own bags" ON disc_bags FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Bag discs: users can manage discs in their own bags
+ALTER TABLE bag_discs ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users can read own bag discs" ON bag_discs FOR SELECT USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can insert own bag discs" ON bag_discs FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can update own bag discs" ON bag_discs FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Users can delete own bag discs" ON bag_discs FOR DELETE USING (
+    EXISTS (SELECT 1 FROM disc_bags WHERE id = bag_discs.bag_id AND user_id = auth.uid())
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ============================================
 -- Indexes
@@ -219,3 +291,5 @@ CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
 CREATE INDEX IF NOT EXISTS idx_game_players_user ON game_players(user_id);
 CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id);
+CREATE INDEX IF NOT EXISTS idx_disc_bags_user ON disc_bags(user_id);
+CREATE INDEX IF NOT EXISTS idx_bag_discs_bag ON bag_discs(bag_id);
