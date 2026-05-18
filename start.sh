@@ -7,12 +7,23 @@ bunx prisma migrate deploy --schema=/app/prisma/schema.prisma 2>/dev/null || tru
 echo "==> Starting scraper service on port 3030..."
 cd /app/mini-services/scraper-service
 bun run dev &
-SCRAPER_PID=$!
 cd /app
 
-# Wait for scraper to be ready
+# Wait for scraper to actually be ready by polling port 3030
 echo "==> Waiting for scraper service to be ready..."
-sleep 5
+SCRAPER_READY=0
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3030/scrape/list -o /dev/null 2>/dev/null; then
+    SCRAPER_READY=1
+    echo "==> Scraper ready after ${i}s"
+    break
+  fi
+  sleep 1
+done
+
+if [ "$SCRAPER_READY" = "0" ]; then
+  echo "==> Warning: scraper not ready after 30s, continuing anyway"
+fi
 
 # Daily scrape loop in background
 (
