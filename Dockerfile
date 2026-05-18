@@ -5,7 +5,7 @@ WORKDIR /app
 # ---- Dependencies (main app) ----
 FROM base AS deps
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile
+RUN bun install 
 
 # ---- Dependencies (scraper-service) ----
 FROM base AS scraper-deps
