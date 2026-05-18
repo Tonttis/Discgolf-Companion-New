@@ -156,15 +156,15 @@ export function AppShell() {
           <div className="flex items-center justify-around h-14">
             <button
               type="button"
-              onClick={navigateHome}
-              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
+              onClick={() => useAppStore.getState().navigateToHome()}
+              className={`cursor-pointer flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation ${
                 activeTab === 'home'
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Home className="size-5" />
-              <span className="text-[10px] font-medium">Etusivu</span>
+              <Home className="size-5 pointer-events-none" />
+              <span className="text-[10px] font-medium pointer-events-none">Etusivu</span>
             </button>
             <button
               type="button"
