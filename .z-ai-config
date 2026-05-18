@@ -1,0 +1,7 @@
+{
+  "baseUrl": "http://172.25.136.193:8080/v1",
+  "apiKey": "Z.ai",
+  "chatId": "chat-386d8fec-3744-4013-bd66-2e843218e255",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMzExYWJmMzgtYzdiZi00NWZlLTliNDQtMGVjYzMwZWM2NWI3IiwiY2hhdF9pZCI6ImNoYXQtMzg2ZDhmZWMtMzc0NC00MDEzLWJkNjYtMmU4NDMyMThlMjU1IiwicGxhdGZvcm0iOiJ6YWkifQ.SrB1LBpX9nQ9HXc2UAUpVVfONaionN7YhfkCb2lqApY",
+  "userId": "311abf38-c7bf-45fe-9b44-0ecc30ec65b7"
+}
