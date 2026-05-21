@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Home, MapPin, ArrowLeft, User, Heart } from 'lucide-react';
+import { Home, MapPin, ArrowLeft, User, Heart, Backpack } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuth } from '@/lib/auth/auth-context';
 import { HomeView } from './HomeView';
@@ -15,6 +15,10 @@ import { GameDetailView } from './GameDetailView';
 import { FavoritesView } from './FavoritesView';
 import { ProfileView } from './ProfileView';
 import { AuthView } from './AuthView';
+import { BagView } from './BagView';
+import { SettingsView } from './SettingsView';
+import { PlayerSearchView } from './PlayerSearchView';
+import { PlayerProfileView } from './PlayerProfileView';
 import { ViewTransition } from './ViewTransition';
 
 export function AppShell() {
@@ -25,6 +29,7 @@ export function AppShell() {
   const navigateToProfile = useAppStore((s) => s.navigateToProfile);
   const navigateToAuth = useAppStore((s) => s.navigateToAuth);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
+  const navigateToBag = useAppStore((s) => s.navigateToBag);
   const viewHistory = useAppStore((s) => s.viewHistory);
   const { isAuthenticated, supabaseConfigured } = useAuth();
 
@@ -55,6 +60,14 @@ export function AppShell() {
         return <FavoritesView />;
       case 'profile':
         return <ProfileView />;
+      case 'bag':
+        return <BagView />;
+      case 'settings':
+        return <SettingsView />;
+      case 'player-search':
+        return <PlayerSearchView />;
+      case 'player-profile':
+        return <PlayerProfileView />;
       case 'auth':
         return <AuthView />;
       default:
@@ -66,8 +79,9 @@ export function AppShell() {
   const getActiveTab = (): string => {
     if (currentView === 'home') return 'home';
     if (['courses', 'course-detail'].includes(currentView)) return 'courses';
+    if (['bag'].includes(currentView)) return 'bag';
     if (['favorites'].includes(currentView)) return 'favorites';
-    if (['profile', 'auth', 'game-history', 'game-detail'].includes(currentView)) return 'profile';
+    if (['profile', 'auth', 'game-history', 'game-detail', 'settings', 'player-search', 'player-profile'].includes(currentView)) return 'profile';
     if (['new-game', 'active-game', 'game-summary'].includes(currentView)) return 'home';
     return 'home';
   };
@@ -131,6 +145,17 @@ export function AppShell() {
             >
               <MapPin className="size-5" />
               <span className="text-[10px] font-medium">Radat</span>
+            </button>
+            <button
+              onClick={isAuthenticated ? navigateToBag : navigateToAuth}
+              className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
+                activeTab === 'bag'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Backpack className="size-5" />
+              <span className="text-[10px] font-medium">Kiekot</span>
             </button>
             <button
               onClick={navigateToFavorites}

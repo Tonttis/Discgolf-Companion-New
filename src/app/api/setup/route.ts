@@ -329,6 +329,22 @@ CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id);
 CREATE INDEX IF NOT EXISTS idx_disc_bags_user ON disc_bags(user_id);
 CREATE INDEX IF NOT EXISTS idx_bag_discs_bag ON bag_discs(bag_id);
+
+-- ============================================
+-- Storage: Avatars bucket
+-- ============================================
+-- Run this in the Supabase SQL Editor or create via Dashboard:
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true);
+-- 
+-- Allow authenticated users to upload their own avatars:
+-- CREATE POLICY "Users can upload own avatar" ON storage.objects
+--   FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- CREATE POLICY "Users can update own avatar" ON storage.objects
+--   FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- CREATE POLICY "Users can delete own avatar" ON storage.objects
+--   FOR DELETE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- CREATE POLICY "Avatars are publicly viewable" ON storage.objects
+--   FOR SELECT USING (bucket_id = 'avatars');
 `;
 
 // GET /api/setup - Check database setup status

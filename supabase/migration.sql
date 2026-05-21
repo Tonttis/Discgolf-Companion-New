@@ -148,6 +148,81 @@ CREATE TABLE IF NOT EXISTS bag_discs (
 );
 
 -- ============================================
+-- SECURITY DEFINER helper functions
+-- These bypass RLS for server-side operations where we verify ownership in the API
+-- ============================================
+
+-- Add disc to bag (SECURITY DEFINER bypasses RLS)
+CREATE OR REPLACE FUNCTION public.add_disc_to_bag(
+  p_bag_id UUID,
+  p_disc_id TEXT,
+  p_disc_name TEXT,
+  p_brand TEXT DEFAULT NULL,
+  p_category TEXT DEFAULT NULL,
+  p_speed NUMERIC DEFAULT NULL,
+  p_glide NUMERIC DEFAULT NULL,
+  p_turn NUMERIC DEFAULT NULL,
+  p_fade NUMERIC DEFAULT NULL,
+  p_stability TEXT DEFAULT NULL,
+  p_pic TEXT DEFAULT NULL,
+  p_link TEXT DEFAULT NULL,
+  p_notes TEXT DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result_id UUID;
+BEGIN
+  INSERT INTO public.bag_discs (bag_id, disc_id, disc_name, brand, category, speed, glide, turn, fade, stability, pic, link, notes)
+  VALUES (p_bag_id, p_disc_id, p_disc_name, p_brand, p_category, p_speed, p_glide, p_turn, p_fade, p_stability, p_pic, p_link, p_notes)
+  ON CONFLICT (bag_id, disc_id) DO UPDATE SET
+    disc_name = EXCLUDED.disc_name,
+    brand = EXCLUDED.brand,
+    category = EXCLUDED.category,
+    speed = EXCLUDED.speed,
+    glide = EXCLUDED.glide,
+    turn = EXCLUDED.turn,
+    fade = EXCLUDED.fade,
+    stability = EXCLUDED.stability,
+    pic = EXCLUDED.pic,
+    link = EXCLUDED.link,
+    notes = EXCLUDED.notes
+  RETURNING id INTO result_id;
+  RETURN result_id;
+END;
+$$;
+
+-- Remove disc from bag (SECURITY DEFINER bypasses RLS)
+CREATE OR REPLACE FUNCTION public.remove_disc_from_bag(
+  p_disc_row_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM public.bag_discs WHERE id = p_disc_row_id;
+  RETURN FOUND;
+END;
+$$;
+
+-- Update avatar URL (SECURITY DEFINER bypasses RLS)
+CREATE OR REPLACE FUNCTION public.update_avatar_url(
+  p_user_id UUID,
+  p_avatar_url TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.profiles SET avatar_url = p_avatar_url, updated_at = NOW() WHERE id = p_user_id;
+END;
+$$;
+
+-- ============================================
 -- Row Level Security (RLS)
 -- ============================================
 
@@ -181,11 +256,12 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- Games: readable by game players, creatable by authenticated users
+-- Games: completed games visible to everyone, in_progress/abandoned only to players
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Games viewable by players" ON games FOR SELECT USING (
-    EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid())
+    status = 'completed'
+    OR EXISTS (SELECT 1 FROM game_players WHERE game_id = games.id AND user_id = auth.uid())
     OR created_by = auth.uid()
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -199,12 +275,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- Game players: readable by game participants
+-- Game players: readable by anyone (needed for public game viewing)
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
-  CREATE POLICY "Game players viewable by game participants" ON game_players FOR SELECT USING (
-    EXISTS (SELECT 1 FROM games WHERE id = game_players.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = game_players.game_id AND gp.user_id = auth.uid())))
-  );
+  CREATE POLICY "Game players viewable by everyone" ON game_players FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -214,12 +288,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- Scores: readable by game participants, writable by the player themselves or game creator
+-- Scores: readable by anyone (needed for public game viewing)
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
-  CREATE POLICY "Scores viewable by game participants" ON scores FOR SELECT USING (
-    EXISTS (SELECT 1 FROM games WHERE id = scores.game_id AND (created_by = auth.uid() OR EXISTS (SELECT 1 FROM game_players WHERE game_id = scores.game_id AND user_id = auth.uid())))
-  );
+  CREATE POLICY "Scores viewable by everyone" ON scores FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -293,3 +365,20 @@ CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id);
 CREATE INDEX IF NOT EXISTS idx_disc_bags_user ON disc_bags(user_id);
 CREATE INDEX IF NOT EXISTS idx_bag_discs_bag ON bag_discs(bag_id);
+
+-- ============================================
+-- Storage: Avatars bucket
+-- ============================================
+-- Run this in the Supabase SQL Editor or create via Dashboard:
+INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Allow authenticated users to upload their own avatars:
+CREATE POLICY "Users can upload own avatar" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+CREATE POLICY "Users can update own avatar" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+CREATE POLICY "Users can delete own avatar" ON storage.objects
+  FOR DELETE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+CREATE POLICY "Avatars are publicly viewable" ON storage.objects
+  FOR SELECT USING (bucket_id = 'avatars');

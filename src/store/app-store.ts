@@ -18,6 +18,10 @@ interface AppStore {
   selectedGame: Game | null;
   setSelectedGame: (game: Game | null) => void;
 
+  // Selected user (for viewing other player profiles)
+  selectedUserId: string | null;
+  setSelectedUserId: (userId: string | null) => void;
+
   // Filters
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -41,6 +45,10 @@ interface AppStore {
   navigateToGameHistory: () => void;
   navigateToGameDetail: (game: Game) => void;
   navigateToFavorites: () => void;
+  navigateToBag: () => void;
+  navigateToPlayerSearch: () => void;
+  navigateToPlayerProfile: (userId: string) => void;
+  navigateToSettings: () => void;
   goBack: () => void;
 
   // History
@@ -59,6 +67,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedGame: null,
   setSelectedGame: (game) => set({ selectedGame: game }),
+
+  selectedUserId: null,
+  setSelectedUserId: (userId) => set({ selectedUserId: userId }),
 
   searchQuery: '',
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -159,6 +170,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { currentView, viewHistory } = get();
     set({
       currentView: 'favorites',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToBag: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'bag',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToPlayerSearch: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'player-search',
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToPlayerProfile: (userId) => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'player-profile',
+      selectedUserId: userId,
+      viewHistory: [...viewHistory, currentView],
+    });
+  },
+
+  navigateToSettings: () => {
+    const { currentView, viewHistory } = get();
+    set({
+      currentView: 'settings',
       viewHistory: [...viewHistory, currentView],
     });
   },

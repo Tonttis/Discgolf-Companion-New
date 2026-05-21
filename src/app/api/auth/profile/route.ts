@@ -26,12 +26,19 @@ export async function GET() {
 
     // If profile exists, return it
     if (profile) {
+      // Add cache-busting to avatar URL if it doesn't already have one
+      let avatarUrl = profile.avatar_url;
+      if (avatarUrl && !avatarUrl.includes('?t=')) {
+        const separator = avatarUrl.includes('?') ? '&' : '?';
+        avatarUrl = `${avatarUrl}${separator}t=${Date.now()}`;
+      }
+
       return NextResponse.json({
         profile: {
           id: profile.id,
           username: profile.username,
           displayName: profile.display_name,
-          avatarUrl: profile.avatar_url,
+          avatarUrl,
           createdAt: profile.created_at,
           updatedAt: profile.updated_at,
         },

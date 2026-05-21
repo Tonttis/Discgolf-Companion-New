@@ -103,7 +103,11 @@ export type AppView =
   | 'game-summary'
   | 'game-history'
   | 'game-detail'
-  | 'favorites';
+  | 'favorites'
+  | 'bag'
+  | 'settings'
+  | 'player-search'
+  | 'player-profile';
 
 // ==========================================
 // Auth & User Types
@@ -116,6 +120,17 @@ export interface UserProfile {
   avatarUrl: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OtherUserProfile {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  gameCount: number;
+  completedCount: number;
+  bagDiscCount: number;
 }
 
 export interface AuthState {
@@ -184,6 +199,104 @@ export interface Favorite {
   userId: string;
   courseSlug: string;
   createdAt: string;
+}
+
+// ==========================================
+// Bag Types
+// ==========================================
+
+export interface DiscBag {
+  id: string;
+  userId: string;
+  name: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BagDisc {
+  id: string;
+  bagId: string;
+  discId: string;
+  discName: string;
+  brand: string | null;
+  category: DiscCategory | null;
+  speed: number | null;
+  glide: number | null;
+  turn: number | null;
+  fade: number | null;
+  stability: DiscStability | null;
+  pic: string | null;
+  link: string | null;
+  notes: string | null;
+  addedAt: string;
+}
+
+export type DiscCategory = 'putter' | 'midrange' | 'fairway' | 'distance';
+
+export type DiscStability = 'overstable' | 'stable' | 'understable';
+
+export interface DiscSearchResult {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  speed: number;
+  glide: number;
+  turn: number;
+  fade: number;
+  stability: string;
+  pic: string | null;
+  link: string | null;
+}
+
+export function getDiscCategoryLabel(cat: DiscCategory | null | string): string {
+  if (!cat) return 'Tuntematon';
+  switch (cat) {
+    case 'putter': return 'Putti';
+    case 'midrange': return 'Midari';
+    case 'fairway': return 'Ohjauskiekko';
+    case 'distance': return 'Kaukokiekko';
+    default: return String(cat);
+  }
+}
+
+// Finnish grammar: partitive plural for "Ei X" (no X) empty states
+export function getDiscCategoryPartitive(cat: DiscCategory | null | string): string {
+  if (!cat) return 'kiekkoja';
+  switch (cat) {
+    case 'putter': return 'puttereita';
+    case 'midrange': return 'midareita';
+    case 'fairway': return 'ohjauskiekkoja';
+    case 'distance': return 'kaukokiekkoja';
+    default: return 'kiekkoja';
+  }
+}
+
+export function getDiscStabilityLabel(stability: DiscStability | null | string): string {
+  if (!stability) return '';
+  switch (stability) {
+    case 'overstable': return 'Ylivakaa';
+    case 'stable': return 'Vakaa';
+    case 'understable': return 'Alivakaa';
+    default: return String(stability);
+  }
+}
+
+export function getDiscCategoryFromSpeed(speed: number | null): DiscCategory {
+  if (speed === null) return 'midrange';
+  if (speed <= 3) return 'putter';
+  if (speed <= 5) return 'midrange';
+  if (speed <= 7) return 'fairway';
+  return 'distance';
+}
+
+export function getDiscStabilityFromFlight(turn: number | null, fade: number | null): DiscStability {
+  if (turn === null || fade === null) return 'stable';
+  const diff = fade + turn; // positive = overstable tendency, negative = understable
+  if (diff > 1) return 'overstable';
+  if (diff < -1) return 'understable';
+  return 'stable';
 }
 
 // ==========================================

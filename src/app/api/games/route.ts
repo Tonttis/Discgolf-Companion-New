@@ -16,16 +16,18 @@ export async function GET(request: NextRequest) {
 
     const status = request.nextUrl.searchParams.get('status');
 
+    // Use admin client for reliable reads (bypasses RLS)
+    const adminClient = await createSupabaseAdminClient();
+    const client = adminClient || supabase;
+
     // Get all games where user is a player
-    let query = supabase
+    const { data: playerGames } = await client
       .from('game_players')
       .select('game_id')
       .eq('user_id', user.id);
 
-    const { data: playerGames } = await query;
-
     // Also get games created by user
-    const { data: createdGames } = await supabase
+    const { data: createdGames } = await client
       .from('games')
       .select('id')
       .eq('created_by', user.id);
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ games: [] });
     }
 
-    let gamesQuery = supabase
+    let gamesQuery = client
       .from('games')
       .select('*')
       .in('id', gameIds)
@@ -61,11 +63,11 @@ export async function GET(request: NextRequest) {
     const enrichedGames = await Promise.all(
       (games ?? []).map(async (game) => {
         const [playersRes, scoresRes] = await Promise.all([
-          supabase
+          client
             .from('game_players')
             .select('*, profiles:user_id(username, display_name)')
             .eq('game_id', game.id),
-          supabase
+          client
             .from('scores')
             .select('*')
             .eq('game_id', game.id)

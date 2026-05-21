@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import {
   User,
   AtSign,
-  Edit3,
   Check,
   X,
   LogOut,
@@ -22,6 +21,11 @@ import {
   Pencil,
   AlertCircle,
   ChevronRight,
+  Backpack,
+  Settings,
+  Camera,
+  Trash2,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useGames, useFavorites } from '@/hooks/use-disc-golf';
@@ -56,17 +60,20 @@ function SupabaseNotConfiguredMessage() {
 }
 
 export function ProfileView() {
-  const { user, isLoading, supabaseConfigured, signOut, updateProfile } = useAuth();
-  const { data: gamesData } = useGames();
-  const { data: favoritesData } = useAppStore as never; // will use useFavorites below
+  const { user, isLoading, supabaseConfigured, signOut, updateProfile, refreshProfile } = useAuth();
   const navigateToGameHistory = useAppStore((s) => s.navigateToGameHistory);
   const navigateToFavorites = useAppStore((s) => s.navigateToFavorites);
+  const navigateToBag = useAppStore((s) => s.navigateToBag);
+  const navigateToSettings = useAppStore((s) => s.navigateToSettings);
+  const navigateToPlayerSearch = useAppStore((s) => s.navigateToPlayerSearch);
   const navigateHome = useAppStore((s) => s.navigateHome);
 
   const [editingName, setEditingName] = useState(false);
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch games and favorites
   const gamesResult = useGames();
@@ -123,6 +130,65 @@ export function ProfileView() {
     }
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      toast.error('Vain JPEG, PNG, WebP ja GIF tiedostot sallittu');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Tiedosto on liian suuri (max 2MB)');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/auth/avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      const { avatarUrl } = await res.json();
+      await refreshProfile();
+      toast.success('Profiilikuva päivitetty!');
+    } catch (err) {
+      toast.error('Kuvan lataus epäonnistui', {
+        description: err instanceof Error ? err.message : 'Yritä uudelleen',
+      });
+    } finally {
+      setUploadingAvatar(false);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    setUploadingAvatar(true);
+    try {
+      const res = await fetch('/api/auth/avatar', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      await refreshProfile();
+      toast.success('Profiilikuva poistettu');
+    } catch {
+      toast.error('Kuvan poistaminen epäonnistui');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -165,14 +231,38 @@ export function ProfileView() {
         <div className="h-24 bg-gradient-to-br from-emerald-500 via-emerald-600 to-green-700" />
         <CardContent className="p-6 -mt-10 space-y-4">
           <div className="flex items-end gap-4">
-            <Avatar className="size-20 border-4 border-background shadow-lg">
-              {user.avatarUrl ? (
-                <AvatarImage src={user.avatarUrl} alt={user.displayName || user.username} />
-              ) : null}
-              <AvatarFallback className="text-lg font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            {/* Avatar with upload overlay */}
+            <div className="relative group">
+              <Avatar className="size-20 border-4 border-background shadow-lg">
+                {user.avatarUrl ? (
+                  <AvatarImage src={user.avatarUrl} alt={user.displayName || user.username} />
+                ) : null}
+                <AvatarFallback className="text-lg font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              {/* Upload overlay */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed"
+                aria-label="Vaihda profiilikuva"
+              >
+                {uploadingAvatar ? (
+                  <Loader2 className="size-5 animate-spin text-white" />
+                ) : (
+                  <Camera className="size-5 text-white" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+            </div>
+
             <div className="flex-1 min-w-0 pb-1">
               {editingName ? (
                 <div className="space-y-2">
@@ -235,6 +325,32 @@ export function ProfileView() {
               )}
             </div>
           </div>
+
+          {/* Avatar action buttons */}
+          {user.avatarUrl && (
+            <div className="flex gap-2 -mt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+              >
+                <Camera className="size-3 mr-1" />
+                Vaihda kuva
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-destructive hover:text-destructive"
+                onClick={handleAvatarRemove}
+                disabled={uploadingAvatar}
+              >
+                <Trash2 className="size-3 mr-1" />
+                Poista kuva
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -310,6 +426,57 @@ export function ProfileView() {
                   ? `${favoritesCount} suosikkia`
                   : 'Ei suosikkeja vielä'}
               </p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </button>
+
+          <Separator className="my-1" />
+
+          {/* My Discs */}
+          <button
+            onClick={navigateToBag}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="flex items-center justify-center size-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 shrink-0">
+              <Backpack className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">Laukkuni</p>
+              <p className="text-xs text-muted-foreground">Hallitse kiekkovalikoimaasi</p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </button>
+
+          <Separator className="my-1" />
+
+          {/* Player Search */}
+          <button
+            onClick={navigateToPlayerSearch}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="flex items-center justify-center size-10 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 shrink-0">
+              <Users className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">Pelaajahaku</p>
+              <p className="text-xs text-muted-foreground">Etsi ja selaa muiden pelaajien profiileja</p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+          </button>
+
+          <Separator className="my-1" />
+
+          {/* Settings */}
+          <button
+            onClick={navigateToSettings}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="flex items-center justify-center size-10 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+              <Settings className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">Asetukset</p>
+              <p className="text-xs text-muted-foreground">Teema ja sovelluksen asetukset</p>
             </div>
             <ChevronRight className="size-4 text-muted-foreground shrink-0" />
           </button>

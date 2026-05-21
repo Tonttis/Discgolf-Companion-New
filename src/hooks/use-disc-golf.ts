@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CoursesListResponse, Course, SyncResponse, Game, Favorite } from '@/lib/types';
+import type { CoursesListResponse, Course, SyncResponse, Game, Favorite, DiscBag, BagDisc, DiscSearchResult, OtherUserProfile } from '@/lib/types';
 
 export function useCourses(
   search?: string,
@@ -160,6 +160,27 @@ export function useCompleteGame() {
   });
 }
 
+export function useLeaveGame() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ gameId }: { gameId: string }) => {
+      const response = await fetch(`/api/games/${gameId}/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to leave game');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+    },
+  });
+}
+
 // ==========================================
 // Favorites Hooks
 // ==========================================
@@ -215,5 +236,144 @@ export function useUserSearch(username: string) {
     },
     enabled: username.length >= 1,
     staleTime: 10 * 1000,
+  });
+}
+
+// ==========================================
+// Bag Hooks
+// ==========================================
+
+export function useBags() {
+  return useQuery<{ bags: DiscBag[] }>({
+    queryKey: ['bags'],
+    queryFn: async () => {
+      const response = await fetch('/api/bags');
+      if (!response.ok) throw new Error('Failed to fetch bags');
+      return response.json();
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useBagDiscs(bagId: string | null) {
+  return useQuery<{ bag: DiscBag; discs: BagDisc[] }>({
+    queryKey: ['bag-discs', bagId],
+    queryFn: async () => {
+      const response = await fetch(`/api/bags/${bagId}`);
+      if (!response.ok) throw new Error('Failed to fetch bag discs');
+      return response.json();
+    },
+    enabled: bagId !== null,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateBag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ name }: { name: string }) => {
+      const response = await fetch('/api/bags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error('Failed to create bag');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bags'] });
+    },
+  });
+}
+
+export function useAddDiscToBag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bagId, disc }: { bagId: string; disc: Omit<BagDisc, 'id' | 'bagId' | 'addedAt'> }) => {
+      const response = await fetch(`/api/bags/${bagId}/discs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discs: [disc] }),
+      });
+      if (!response.ok) throw new Error('Failed to add disc');
+      return response.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['bag-discs', variables.bagId] });
+    },
+  });
+}
+
+export function useRemoveDiscFromBag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bagId, discId }: { bagId: string; discId: string }) => {
+      const response = await fetch(`/api/bags/${bagId}/discs`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discId }),
+      });
+      if (!response.ok) throw new Error('Failed to remove disc');
+      return response.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['bag-discs', variables.bagId] });
+    },
+  });
+}
+
+export function useDiscSearch(query: string) {
+  return useQuery<{ discs: DiscSearchResult[] }>({
+    queryKey: ['disc-search', query],
+    queryFn: async () => {
+      const response = await fetch(`/api/discs/search?q=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Failed to search discs');
+      return response.json();
+    },
+    enabled: query.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ==========================================
+// Other User Profile Hooks
+// ==========================================
+
+export function useOtherUserProfile(userId: string | null) {
+  return useQuery<{ profile: OtherUserProfile }>({
+    queryKey: ['other-user-profile', userId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${userId}`);
+      if (!response.ok) throw new Error('Failed to fetch user profile');
+      return response.json();
+    },
+    enabled: userId !== null,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOtherUserGames(userId: string | null) {
+  return useQuery<{ games: Game[] }>({
+    queryKey: ['other-user-games', userId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${userId}/games`);
+      if (!response.ok) throw new Error('Failed to fetch user games');
+      return response.json();
+    },
+    enabled: userId !== null,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOtherUserBag(userId: string | null) {
+  return useQuery<{ bag: DiscBag | null; discs: BagDisc[] }>({
+    queryKey: ['other-user-bag', userId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${userId}/bag`);
+      if (!response.ok) throw new Error('Failed to fetch user bag');
+      return response.json();
+    },
+    enabled: userId !== null,
+    staleTime: 30 * 1000,
   });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,14 @@ import {
   Medal,
   Calendar,
   Ruler,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { useGame, useCourseDetail } from '@/hooks/use-disc-golf';
+import { useGame, useCourseDetail, useLeaveGame } from '@/hooks/use-disc-golf';
 import { getScoreName, getScoreColor, getScoreBg } from '@/lib/types';
 import type { Game, Hole } from '@/lib/types';
+import { toast } from 'sonner';
 
 // ==========================================
 // Helpers
@@ -235,6 +238,8 @@ export function GameDetailView() {
   const navigateHome = useAppStore((s) => s.navigateHome);
   const navigateToNewGame = useAppStore((s) => s.navigateToNewGame);
   const setSelectedCourse = useAppStore((s) => s.setSelectedCourse);
+  const leaveGame = useLeaveGame();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Fetch fresh game data — takes priority over store data
   const { data: freshGameData, isLoading: isGameLoading } = useGame(storeGame?.id ?? null);
@@ -679,6 +684,65 @@ export function GameDetailView() {
             Pelaa uudelleen
           </Button>
         </div>
+
+        {/* Remove game button */}
+        {confirmDelete ? (
+          <Card className="border-red-200 dark:border-red-800/50 bg-red-50/50 dark:bg-red-950/20">
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-medium text-red-700 dark:text-red-400">
+                {game.players.length > 1
+                  ? 'Haluatko varmasti poistua tästä pelistä? Muut pelaajat voivat jatkaa peliä.'
+                  : 'Haluatko varmasti poistaa tämän pelin? Tätä ei voi perua.'}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1"
+                  disabled={leaveGame.isPending}
+                  onClick={() => {
+                    leaveGame.mutate(
+                      { gameId: game.id },
+                      {
+                        onSuccess: () => {
+                          navigateHome();
+                        },
+                        onError: (err) => {
+                          toast.error('Poistaminen epäonnistui', { description: err.message });
+                        },
+                      }
+                    );
+                  }}
+                >
+                  {leaveGame.isPending ? (
+                    <Loader2 className="size-4 animate-spin mr-1" />
+                  ) : (
+                    <Trash2 className="size-4 mr-1" />
+                  )}
+                  {game.players.length > 1 ? 'Poistu pelistä' : 'Poista peli'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={leaveGame.isPending}
+                >
+                  Peruuta
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Button
+            variant="ghost"
+            className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 className="size-4 mr-2" />
+            {game.players.length > 1 ? 'Poistu pelistä' : 'Poista peli'}
+          </Button>
+        )}
       </section>
 
       {/* Game metadata footer */}
