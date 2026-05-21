@@ -190,122 +190,6 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
-      {/* Database Section */}
-      <Card>
-        <CardHeader className="pb-3 pt-4 px-4">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <Database className="size-3.5" />
-            Tietokanta
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-3">
-          {!migrationStatus && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={checkMigration}
-              disabled={checkingMigration}
-            >
-              {checkingMigration ? (
-                <Loader2 className="size-4 mr-2 animate-spin" />
-              ) : (
-                <Database className="size-4 mr-2" />
-              )}
-              Tarkista tietokannan tila
-            </Button>
-          )}
-
-          {migrationStatus && (
-            <>
-              {migrationStatus.needsMigration ? (
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                    <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-amber-800 dark:text-amber-200">
-                        Migraatio tarvitaan
-                      </p>
-                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                        Tietokannasta puuttuu sarakkeita: {migrationStatus.missingColumns.join(', ')}
-                        {!migrationStatus.avatarsBucketExists && ', avatars-varasto'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                    onClick={runMigration}
-                    disabled={runningMigration}
-                  >
-                    {runningMigration ? (
-                      <Loader2 className="size-4 mr-2 animate-spin" />
-                    ) : (
-                      <Database className="size-4 mr-2" />
-                    )}
-                    Suorita migraatio
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs"
-                    onClick={() => setShowMigrationSql(!showMigrationSql)}
-                  >
-                    {showMigrationSql ? 'Piilota SQL' : 'Näytä migraatio SQL'}
-                  </Button>
-
-                  {showMigrationSql && (
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <pre className="text-[10px] bg-muted p-3 rounded-lg overflow-auto max-h-48 whitespace-pre-wrap">
-                          {migrationStatus.migrationSql}
-                        </pre>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-2 right-2 size-7"
-                          onClick={copyMigrationSql}
-                        >
-                          <Copy className="size-3" />
-                        </Button>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">
-                        Kopioi SQL ja suorita Supabase SQL-editorissa
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
-                  <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-emerald-800 dark:text-emerald-200">
-                      Tietokanta ajan tasalla
-                    </p>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                      Kaikki sarakkeet ja varastot ovat kunnossa.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-xs"
-                onClick={checkMigration}
-                disabled={checkingMigration}
-              >
-                {checkingMigration ? (
-                  <Loader2 className="size-3 mr-1 animate-spin" />
-                ) : null}
-                Tarkista uudelleen
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Tietoja (About) Section */}
       <Card>
         <CardHeader className="pb-3 pt-4 px-4">
@@ -321,7 +205,7 @@ export function SettingsView() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm">DiscGolf Companion</p>
-              <p className="text-xs text-muted-foreground">Versio 1.0</p>
+              <p className="text-xs text-muted-foreground">Versio 1.1</p>
             </div>
             <Badge variant="outline" className="text-[10px]">
               v1.0
